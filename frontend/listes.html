@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Listes des Objets – Festival</title>
+  <link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+  <header>
+    <span class="festival-icon" aria-hidden="true">
+      <svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="20" cy="20" r="20" fill="#ffe066"/>
+        <path d="M11 27 Q20 10 29 27" stroke="#e11d48" stroke-width="3" fill="none"/>
+        <circle cx="20" cy="19" r="3.5" fill="#3b82f6" stroke="#fff" stroke-width="1.5"/>
+        <circle cx="14" cy="24" r="1.2" fill="#e11d48"/>
+        <circle cx="26" cy="24" r="1.2" fill="#e11d48"/>
+      </svg>
+    </span>
+    <h1 tabindex="0">Listes des objets</h1>
+    <p>Consultez tous les objets trouvés ou perdus au festival.</p>
+    <a href="index.html" class="btn-retour">← Retour à l’accueil</a>
+  </header>
+  <main>
+    <div style="text-align:right;margin-bottom:10px;">
+      <button id="btn-export-pdf" style="background:#3b82f6;color:#fff;padding:10px 20px;border-radius:8px;border:none;font-weight:600;cursor:pointer;">Exporter en PDF</button>
+      <button id="btn-export-csv" style="background:#059669;color:#fff;padding:10px 20px;border-radius:8px;border:none;font-weight:600;cursor:pointer;margin-left:10px;">Exporter (CSV)</button>
+    </div>
+    <div style="text-align:center;margin-bottom:18px;">
+      <input type="search" id="search-objets" placeholder="Rechercher un objet..." style="padding:10px;width:320px;max-width:90%;border-radius:7px;border:1.5px solid #3b82f6;font-size:1em;" />
+    </div>
+    <section class="tab-section">
+      <div class="tabs" role="tablist">
+        <button class="tab-btn active" id="tab-objets" role="tab" aria-selected="true" aria-controls="tabpanel-objets">Objets</button>
+      </div>
+      <div class="tab-content active" id="tabpanel-objets" role="tabpanel" aria-labelledby="tab-objets">
+        <div class="sub-tabs" role="tablist">
+          <button class="sub-tab-btn active" id="tab-trouves" role="tab" aria-selected="true" aria-controls="tabpanel-trouves">Objets trouvés</button>
+          <button class="sub-tab-btn" id="tab-perdus" role="tab" aria-selected="false" aria-controls="tabpanel-perdus">Objets perdus</button>
+        </div>
+        <div class="sub-tab-content active" id="tabpanel-trouves" role="tabpanel" aria-labelledby="tab-trouves">
+          <div id="liste-trouves" class="cartes"></div>
+        </div>
+        <div class="sub-tab-content" id="tabpanel-perdus" role="tabpanel" aria-labelledby="tab-perdus" style="display:none">
+          <div id="liste-perdus" class="cartes"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+  <footer>
+    <p>Plateforme sécurisée – Powered by FastAPI & Railway</p>
+  </footer>
+  <script src="script.js"></script>
+<script>document.addEventListener('DOMContentLoaded',()=>{if(document.getElementById('modal-rendu'))document.getElementById('modal-rendu').style.display='none';});</script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+  <!-- Modal rendu objet -->
+  <div id="modal-rendu" style="display:none;position:fixed;z-index:1000;left:0;top:0;width:100vw;height:100vh;background:rgba(30,41,59,0.72);align-items:center;justify-content:center;">
+    <div style="background:#fff;padding:30px 24px 18px 24px;border-radius:14px;max-width:390px;width:98vw;box-shadow:0 8px 40px #0004;position:relative;">
+      <button id="modal-close-rendu" style="position:absolute;right:12px;top:10px;font-size:1.2em;background:none;border:none;cursor:pointer;color:#e11d48;">✖</button>
+      <h3 style="margin-top:0;color:#3b82f6;">Rendre l’objet</h3>
+      <div id="confirmation-restitution-message" style="background-color: #fff9e6; border-left: 4px solid #ffcc00; padding: 12px; margin-bottom: 15px; max-height: 200px; overflow-y: auto; font-size: 0.9em; color: #594500; text-align: left;">
+        <p style="margin-top:0; font-weight: bold;">⚠️ Confirmation de restitution de l'objet</p>
+        <p>Attention : En cochant cet objet comme rendu, vous confirmez que celui-ci a bien été restitué à la bonne personne.</p>
+        <p style="font-weight: bold; margin-top:10px;">🟠 Merci de rester extrêmement vigilant lors de cette étape :</p>
+        <ul style="list-style-type: disc; padding-left: 20px; margin-bottom: 0;">
+          <li>Vérifiez l'identité de la personne qui récupère l'objet.</li>
+          <li>Demandez des informations précises (nom, prénom, description détaillée, contenu de l’objet, circonstance de la perte, etc.).</li>
+          <li>En cas de doute, ne validez pas la restitution et demandez l’avis d’un responsable.</li>
+        </ul>
+        <p style="font-weight: bold; margin-top:10px;">✅ Objectif : éviter toute restitution à une mauvaise personne et protéger les effets personnels des festivaliers.</p>
+      </div>
+      <form id="form-rendu" autocomplete="off">
+        <label>Nom du bénéficiaire *</label>
+        <input type="text" name="nom" required maxlength="50" placeholder="Nom" />
+        <label>Prénom *</label>
+        <input type="text" name="prenom" required maxlength="50" placeholder="Prénom" />
+        <label>Téléphone *</label>
+        <input type="tel" name="telephone" required maxlength="20" placeholder="Téléphone" />
+        <label>Email</label>
+        <input type="email" name="email" maxlength="80" placeholder="Email (optionnel)" />
+        <label>Photo du bénéficiaire</label>
+        <input type="file" id="rendu-photo-file" name="photo" accept="image/*" capture="environment" style="margin-bottom:10px;" />
+        <img id="rendu-photo-preview" alt="Aperçu photo" style="display:none;max-width:100%;margin:10px 0;border-radius:10px;" />
+        <button type="submit" style="background:#059669;color:#fff;">Confirmer et valider le rendu</button>
+      </form>
+    </div>
+  </div>
+</body>
+
