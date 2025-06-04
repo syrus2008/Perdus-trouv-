@@ -60,7 +60,6 @@ function filtrerCartes() {
 async function chargerListes() {
   const lt = document.getElementById('liste-trouves');
   const lp = document.getElementById('liste-perdus');
-  if (!lt || !lp) return;
   lt.innerHTML = '<div class="loader">Chargement...</div>';
   lp.innerHTML = '<div class="loader">Chargement...</div>';
   try {
