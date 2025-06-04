@@ -114,7 +114,7 @@ async def ajouter_objet_trouve(
     response["message"] = "Objet trouvé ajouté"
     return response
 
-class ObjetPerdu(BaseModel):
+class ObjetPerduForm(BaseModel):
     description: str
     date_rapport: str
     infos: Optional[str] = ""
@@ -150,7 +150,7 @@ class ObjetPerdu(BaseModel):
         return v.strip()
 
 @app.post("/api/objets_perdus")
-async def ajouter_objet_perdu(objet: ObjetPerdu):
+async def ajouter_objet_perdu(objet: ObjetPerduForm):
     objets = load_json("objets_perdus.json")
     data = objet.dict()
     data["id"] = str(uuid.uuid4())
