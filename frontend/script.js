@@ -60,6 +60,7 @@ function filtrerCartes() {
 async function chargerListes() {
   const lt = document.getElementById('liste-trouves');
   const lp = document.getElementById('liste-perdus');
+  if (!lt || !lp) return;
   lt.innerHTML = '<div class="loader">Chargement...</div>';
   lp.innerHTML = '<div class="loader">Chargement...</div>';
   try {
@@ -421,6 +422,11 @@ if (tabTrouves && tabPerdus) {
 }
 
 window.onload = () => {
+  // Gestion fermeture modal rendu
+  const btnCloseRendu = document.getElementById('modal-close-rendu');
+  if (btnCloseRendu) {
+    btnCloseRendu.addEventListener('click', fermerModalRendu);
+  }
   if (document.getElementById('liste-trouves') && document.getElementById('liste-perdus')) {
     chargerListes();
   }
