@@ -4,3 +4,5 @@ python-dotenv
 python-multipart
 rapidfuzz
 markupsafe
+sqlalchemy
+asyncpg

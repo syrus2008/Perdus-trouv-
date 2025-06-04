@@ -9,6 +9,8 @@ import uuid, os, json, shutil
 from datetime import datetime
 from dotenv import load_dotenv
 from backend.matching import find_matches_for_trouve, find_matches_for_perdu
+from backend.db import AsyncSessionLocal, ObjetTrouve, ObjetPerdu
+import asyncio
 
 # Charger les variables d'environnement depuis un fichier .env si présent
 load_dotenv()
@@ -85,6 +87,13 @@ async def ajouter_objet_trouve(
     }
     objets.append(objet_trouve)
     save_json("objets_trouves.json", objets)
+    # Sauvegarde aussi dans PostgreSQL
+    async def save_objet_trouve_db(objet_dict):
+        async with AsyncSessionLocal() as session:
+            obj = ObjetTrouve(**objet_dict)
+            session.add(obj)
+            await session.commit()
+    asyncio.create_task(save_objet_trouve_db(objet_trouve))
     # Recherche de correspondances dans objets_perdus.json
     objets_perdus = load_json("objets_perdus.json")
     matches = find_matches_for_trouve(objets_perdus, objet_trouve["description"])
@@ -147,6 +156,13 @@ async def ajouter_objet_perdu(objet: ObjetPerdu):
     data["id"] = str(uuid.uuid4())
     objets.append(data)
     save_json("objets_perdus.json", objets)
+    # Sauvegarde aussi dans PostgreSQL
+    async def save_objet_perdu_db(objet_dict):
+        async with AsyncSessionLocal() as session:
+            obj = ObjetPerdu(**objet_dict)
+            session.add(obj)
+            await session.commit()
+    asyncio.create_task(save_objet_perdu_db(data))
     # Recherche de correspondances dans objets_trouves.json
     objets_trouves = load_json("objets_trouves.json")
     matches = find_matches_for_perdu(objets_trouves, data["description"])
