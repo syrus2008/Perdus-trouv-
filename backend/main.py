@@ -211,18 +211,29 @@ async def supprimer_objet_trouve(objet_id: str, code: Optional[str] = Query(None
     print('Body reçu:', body, 'Code reçu:', code_final)
     if code_final != "7120":
         raise HTTPException(status_code=403, detail="Code de suppression incorrect.")
+    # Suppression dans la base PostgreSQL d'abord
+    deleted_in_db = False
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            ObjetTrouve.__table__.select().where(ObjetTrouve.__table__.c.id == objet_id)
+        )
+        row = result.first()
+        if row:
+            await session.execute(
+                ObjetTrouve.__table__.delete().where(ObjetTrouve.__table__.c.id == objet_id)
+            )
+            await session.commit()
+            deleted_in_db = True
+    # Suppression dans le JSON si présent
     objets = load_json("objets_trouves.json")
     nouveaux = [obj for obj in objets if obj.get("id") != objet_id]
-    if len(objets) == len(nouveaux):
+    if len(objets) != len(nouveaux):
+        save_json("objets_trouves.json", nouveaux)
+    # Retourne succès si supprimé en base OU dans le JSON
+    if deleted_in_db or len(objets) != len(nouveaux):
+        return {"message": "Objet supprimé", "id": objet_id}
+    else:
         raise HTTPException(status_code=404, detail="Objet non trouvé.")
-    save_json("objets_trouves.json", nouveaux)
-    # Suppression dans la base PostgreSQL
-    async with AsyncSessionLocal() as session:
-        await session.execute(
-            ObjetTrouve.__table__.delete().where(ObjetTrouve.__table__.c.id == objet_id)
-        )
-        await session.commit()
-    return {"message": "Objet supprimé", "id": objet_id}
 
 @app.delete("/api/objets_perdus/{objet_id}")
 async def supprimer_objet_perdu(objet_id: str, code: str = Body(...)):
