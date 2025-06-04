@@ -7,3 +7,4 @@ markupsafe
 sqlalchemy
 asyncpg
 cloudinary
+aiohttp
