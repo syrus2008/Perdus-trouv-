@@ -265,6 +265,8 @@ from fastapi.responses import StreamingResponse
 import csv
 from io import StringIO
 
+import base64
+
 @app.get("/api/export")
 def exporter_objets():
     objets_trouves = load_json("objets_trouves.json")
@@ -285,14 +287,30 @@ def exporter_objets():
     for obj in objets_trouves:
         img_html = ''
         if obj.get('image'):
-            img_html = f'<img src="/{escape(obj["image"])}" alt="photo objet" />'
+            image_path = obj['image']
+            try:
+                ext = image_path.rsplit('.', 1)[-1].lower()
+                mime = 'image/jpeg' if ext in ['jpg', 'jpeg'] else ('image/png' if ext == 'png' else ('image/gif' if ext == 'gif' else 'application/octet-stream'))
+                with open(image_path, 'rb') as imgf:
+                    img_b64 = base64.b64encode(imgf.read()).decode('utf-8')
+                img_html = f'<img src="data:{mime};base64,{img_b64}" alt="photo objet" />'
+            except Exception as e:
+                img_html = f'<span style="color:red">(image non disponible)</span>'
         statut = 'Rendu' if obj.get('rendu') else 'Non rendu'
         benef = ''
         photo_rendu = ''
         if obj.get('rendu'):
             benef = f"{escape(obj.get('nom_beneficiaire',''))} {escape(obj.get('prenom_beneficiaire',''))}<br>Tél: {escape(obj.get('telephone_beneficiaire',''))}<br>Email: {escape(obj.get('email_beneficiaire',''))}"
             if obj.get('photo_rendu'):
-                photo_rendu = f'<img src="/{escape(obj["photo_rendu"])}" alt="photo rendu" />'
+                photo_path = obj['photo_rendu']
+                try:
+                    ext = photo_path.rsplit('.', 1)[-1].lower()
+                    mime = 'image/jpeg' if ext in ['jpg', 'jpeg'] else ('image/png' if ext == 'png' else ('image/gif' if ext == 'gif' else 'application/octet-stream'))
+                    with open(photo_path, 'rb') as imgf:
+                        img_b64 = base64.b64encode(imgf.read()).decode('utf-8')
+                    photo_rendu = f'<img src="data:{mime};base64,{img_b64}" alt="photo rendu" />'
+                except Exception as e:
+                    photo_rendu = f'<span style="color:red">(photo non disponible)</span>'
         html.append(f'<tr><td>{escape(obj.get("id",""))}</td><td>{escape(obj.get("description",""))}</td><td>{escape(obj.get("date_rapport",""))}</td><td>{escape(obj.get("infos",""))}</td><td>{img_html}</td><td>{statut}</td><td>{benef}</td><td>{photo_rendu}</td></tr>')
     html.append('</table><hr>')
     # Objets perdus
