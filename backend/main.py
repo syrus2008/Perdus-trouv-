@@ -181,8 +181,13 @@ async def ajouter_objet_perdu(objet: ObjetPerdu):
     return response
 
 @app.get("/api/objets_trouves")
-def get_objets_trouves():
-    return load_json("objets_trouves.json")
+async def get_objets_trouves():
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            ObjetTrouve.__table__.select()
+        )
+        objets = [dict(row._mapping) for row in result]
+    return objets
 
 from fastapi import Body
 
@@ -274,8 +279,13 @@ def marquer_objet_rendu(objet_id: str):
 
 
 @app.get("/api/objets_perdus")
-def get_objets_perdus():
-    return load_json("objets_perdus.json")
+async def get_objets_perdus():
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            ObjetPerdu.__table__.select()
+        )
+        objets = [dict(row._mapping) for row in result]
+    return objets
 
 from fastapi.responses import StreamingResponse
 import csv
@@ -284,9 +294,12 @@ from io import StringIO
 import base64
 
 @app.get("/api/export")
-def exporter_objets():
-    objets_trouves = load_json("objets_trouves.json")
-    objets_perdus = load_json("objets_perdus.json")
+async def exporter_objets():
+    async with AsyncSessionLocal() as session:
+        result_trouves = await session.execute(ObjetTrouve.__table__.select())
+        objets_trouves = [dict(row._mapping) for row in result_trouves]
+        result_perdus = await session.execute(ObjetPerdu.__table__.select())
+        objets_perdus = [dict(row._mapping) for row in result_perdus]
     from fastapi.responses import HTMLResponse
     from markupsafe import escape
     html = [
