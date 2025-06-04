@@ -7,6 +7,9 @@ from pydantic import BaseModel, validator
 from typing import Optional
 import uuid, os, json, shutil
 from datetime import datetime
+import cloudinary
+import cloudinary.uploader
+import aiohttp
 from dotenv import load_dotenv
 from backend.matching import find_matches_for_trouve, find_matches_for_perdu
 from backend.db import AsyncSessionLocal, ObjetTrouve, ObjetPerdu
@@ -14,6 +17,11 @@ import asyncio
 
 # Charger les variables d'environnement depuis un fichier .env si présent
 load_dotenv()
+
+# Configurer Cloudinary
+cloudinary.config(
+    cloudinary_url=os.getenv("CLOUDINARY_URL")
+)
 
 app = FastAPI()
 
@@ -70,21 +78,18 @@ async def ajouter_objet_trouve(
     contents = await photo.read()
     if len(contents) > MAX_UPLOAD_SIZE:
         raise HTTPException(status_code=400, detail="Fichier trop volumineux (max 2 Mo).")
-    # Nommage sécurisé
-    uid = str(uuid.uuid4())
-    ext = photo.filename.rsplit('.', 1)[1].lower()
-    filepath = f"{UPLOADS_DIR}/{uid}.{ext}"
-    with open(filepath, "wb") as buffer:
-        buffer.write(contents)
-    objets = load_json("objets_trouves.json")
+    # Upload Cloudinary
+    result = cloudinary.uploader.upload(contents, folder="objets-trouves", resource_type="image")
+    url_cloudinary = result.get("secure_url")
     objet_trouve = {
-        "id": uid,
-        "image": filepath,
+        "id": str(uuid.uuid4()),
         "description": description.strip(),
-        "date_rapport": date_rapport,
-        "infos": infos.strip() if infos else "",
+        "date_rapport": date_rapport.strip(),
+        "infos": infos.strip(),
+        "image": url_cloudinary,
         "rendu": False
     }
+    objets = load_json("objets_trouves.json")
     objets.append(objet_trouve)
     save_json("objets_trouves.json", objets)
     # Sauvegarde aussi dans PostgreSQL
@@ -247,7 +252,6 @@ async def rendre_objet_trouve(
 ):
     objets = load_json("objets_trouves.json")
     trouve = False
-    chemin_photo = None
     for obj in objets:
         if obj.get("id") == objet_id:
             obj["rendu"] = True
@@ -261,12 +265,10 @@ async def rendre_objet_trouve(
                 contents = await photo.read()
                 if len(contents) > MAX_UPLOAD_SIZE:
                     raise HTTPException(status_code=400, detail="Fichier trop volumineux (max 2 Mo).")
-                ext = photo.filename.rsplit('.', 1)[1].lower()
-                uid_photo = str(uuid.uuid4())
-                chemin_photo = f"{UPLOADS_DIR}/rendu_{uid_photo}.{ext}"
-                with open(chemin_photo, "wb") as buffer:
-                    buffer.write(contents)
-                obj["photo_rendu"] = chemin_photo
+                # Upload Cloudinary
+                result = cloudinary.uploader.upload(contents, folder="objets-trouves/rendus", resource_type="image")
+                url_cloudinary = result.get("secure_url")
+                obj["photo_rendu"] = url_cloudinary
             trouve = True
             break
     if not trouve:
@@ -361,17 +363,36 @@ async def exporter_objets():
     html.append('<table><caption>Objets trouvés</caption><tr>'
         '<th>ID</th><th>Description</th><th>Date</th><th>Infos</th><th>Image</th><th>Statut</th><th>Bénéficiaire</th><th>Photo rendu</th></tr>')
     for obj in objets_trouves:
-        img_html = ''
-        if obj.get('image'):
-            image_path = obj['image']
-            try:
-                ext = image_path.rsplit('.', 1)[-1].lower()
-                mime = 'image/jpeg' if ext in ['jpg', 'jpeg'] else ('image/png' if ext == 'png' else ('image/gif' if ext == 'gif' else 'application/octet-stream'))
-                with open(image_path, 'rb') as imgf:
-                    img_b64 = base64.b64encode(imgf.read()).decode('utf-8')
-                img_html = f'<img src="data:{mime};base64,{img_b64}" alt="photo objet" />'
-            except Exception as e:
-                img_html = f'<span style="color:red">(image non disponible)</span>'
+        image_path = obj.get('image')
+        img_tag = ''
+        if image_path and os.path.exists(image_path):
+            with open(image_path, "rb") as img_file:
+                img_data = img_file.read()
+            b64 = base64.b64encode(img_data).decode()
+            ext = image_path.rsplit('.', 1)[-1].lower()
+            img_tag = f'<img src="data:image/{ext};base64,{b64}" alt="image" />'
+        elif image_path:
+            # Si c'est une URL Cloudinary, essayer de la télécharger et encoder
+            if image_path.startswith("http"):
+                try:
+                    async with aiohttp.ClientSession() as session_img:
+                        async with session_img.get(image_path) as resp:
+                            if resp.status == 200:
+                                img_data = await resp.read()
+                                # Déduire l'extension depuis l'URL ou le header
+                                ext = image_path.split('.')[-1].split('?')[0].lower()
+                                if ext not in ["jpg", "jpeg", "png", "gif"]:
+                                    ext = resp.headers.get("Content-Type", "image/jpeg").split("/")[-1]
+                                b64 = base64.b64encode(img_data).decode()
+                                img_tag = f'<img src="data:image/{ext};base64,{b64}" alt="image" />'
+                            else:
+                                img_tag = f'<span>Image non dispo</span>'
+                except Exception:
+                    img_tag = f'<span>Image non dispo</span>'
+            else:
+                img_tag = f'<span>Image non dispo</span>'
+        else:
+            img_tag = ''
         statut = 'Rendu' if obj.get('rendu') else 'Non rendu'
         benef = ''
         photo_rendu = ''

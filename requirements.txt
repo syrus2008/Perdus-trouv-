@@ -6,3 +6,4 @@ rapidfuzz
 markupsafe
 sqlalchemy
 asyncpg
+cloudinary
