@@ -157,14 +157,14 @@ async def ajouter_objet_perdu(objet: ObjetPerdu):
     objets.append(data)
     save_json("objets_perdus.json", objets)
     # Sauvegarde aussi dans PostgreSQL
-    async def save_objet_perdu_db(objet_dict):
-        async with AsyncSessionLocal() as session:
-            obj = ObjetPerdu(**objet_dict)
-            session.add(obj)
-            await session.commit()
-    asyncio.create_task(save_objet_perdu_db(data))
-    # Recherche de correspondances dans objets_trouves.json
-    objets_trouves = load_json("objets_trouves.json")
+    async with AsyncSessionLocal() as session:
+        obj = ObjetPerdu(**data)
+        session.add(obj)
+        await session.commit()
+    # Recherche de correspondances dans la base (objets trouvés)
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(ObjetTrouve.__table__.select())
+        objets_trouves = [dict(row._mapping) for row in result]
     matches = find_matches_for_perdu(objets_trouves, data["description"])
     matches_out = [
         {
@@ -199,7 +199,7 @@ class SuppressionCode(BaseModel):
     code: str
 
 @app.delete("/api/objets_trouves/{objet_id}")
-def supprimer_objet_trouve(objet_id: str, code: Optional[str] = Query(None), body: Optional[SuppressionCode] = Body(None)):
+async def supprimer_objet_trouve(objet_id: str, code: Optional[str] = Query(None), body: Optional[SuppressionCode] = Body(None)):
     code_final = code
     if body and hasattr(body, 'code'):
         code_final = body.code
@@ -211,10 +211,16 @@ def supprimer_objet_trouve(objet_id: str, code: Optional[str] = Query(None), bod
     if len(objets) == len(nouveaux):
         raise HTTPException(status_code=404, detail="Objet non trouvé.")
     save_json("objets_trouves.json", nouveaux)
+    # Suppression dans la base PostgreSQL
+    async with AsyncSessionLocal() as session:
+        await session.execute(
+            ObjetTrouve.__table__.delete().where(ObjetTrouve.__table__.c.id == objet_id)
+        )
+        await session.commit()
     return {"message": "Objet supprimé", "id": objet_id}
 
 @app.delete("/api/objets_perdus/{objet_id}")
-def supprimer_objet_perdu(objet_id: str, code: str = Body(...)):
+async def supprimer_objet_perdu(objet_id: str, code: str = Body(...)):
     if code != "7120":
         raise HTTPException(status_code=403, detail="Code de suppression incorrect.")
     objets = load_json("objets_perdus.json")
@@ -222,6 +228,12 @@ def supprimer_objet_perdu(objet_id: str, code: str = Body(...)):
     if len(objets) == len(nouveaux):
         raise HTTPException(status_code=404, detail="Objet non trouvé.")
     save_json("objets_perdus.json", nouveaux)
+    # Suppression dans la base PostgreSQL
+    async with AsyncSessionLocal() as session:
+        await session.execute(
+            ObjetPerdu.__table__.delete().where(ObjetPerdu.__table__.c.id == objet_id)
+        )
+        await session.commit()
     return {"message": "Objet supprimé", "id": objet_id}
 
 @app.post("/api/objets_trouves/rendu")
@@ -243,7 +255,7 @@ async def rendre_objet_trouve(
             obj["prenom_beneficiaire"] = prenom.strip()
             obj["telephone_beneficiaire"] = telephone.strip()
             obj["email_beneficiaire"] = email.strip()
-            if photo is not None:
+            if photo:
                 if not allowed_file(photo.filename):
                     raise HTTPException(status_code=400, detail="Format de fichier non autorisé.")
                 contents = await photo.read()
@@ -260,11 +272,34 @@ async def rendre_objet_trouve(
     if not trouve:
         raise HTTPException(status_code=404, detail="Objet non trouvé")
     save_json("objets_trouves.json", objets)
+
+    # Mise à jour dans la base PostgreSQL
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            ObjetTrouve.__table__.select().where(ObjetTrouve.__table__.c.id == objet_id)
+        )
+        row = result.first()
+        if not row:
+            raise HTTPException(status_code=404, detail="Objet non trouvé en base")
+        update_data = {
+            "rendu": True,
+            "nom_beneficiaire": nom.strip(),
+            "prenom_beneficiaire": prenom.strip(),
+            "telephone_beneficiaire": telephone.strip(),
+            "email_beneficiaire": email.strip(),
+        }
+        if chemin_photo:
+            update_data["photo_rendu"] = chemin_photo
+        await session.execute(
+            ObjetTrouve.__table__.update().where(ObjetTrouve.__table__.c.id == objet_id).values(**update_data)
+        )
+        await session.commit()
+
     return {"message": "Objet marqué comme rendu", "id": objet_id}
 
 # Route legacy pour compatibilité (clic direct, sans modal)
 @app.post("/api/objets_trouves/{objet_id}/rendu")
-def marquer_objet_rendu(objet_id: str):
+async def marquer_objet_rendu(objet_id: str):
     objets = load_json("objets_trouves.json")
     trouve = False
     for obj in objets:
@@ -275,6 +310,18 @@ def marquer_objet_rendu(objet_id: str):
     if not trouve:
         raise HTTPException(status_code=404, detail="Objet non trouvé")
     save_json("objets_trouves.json", objets)
+    # Mise à jour dans la base PostgreSQL
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            ObjetTrouve.__table__.select().where(ObjetTrouve.__table__.c.id == objet_id)
+        )
+        row = result.first()
+        if not row:
+            raise HTTPException(status_code=404, detail="Objet non trouvé en base")
+        await session.execute(
+            ObjetTrouve.__table__.update().where(ObjetTrouve.__table__.c.id == objet_id).values(rendu=True)
+        )
+        await session.commit()
     return {"message": "Statut mis à jour", "id": objet_id}
 
 
