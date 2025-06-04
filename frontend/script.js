@@ -421,11 +421,6 @@ if (tabTrouves && tabPerdus) {
 }
 
 window.onload = () => {
-  // Gestion fermeture modal rendu
-  const btnCloseRendu = document.getElementById('modal-close-rendu');
-  if (btnCloseRendu) {
-    btnCloseRendu.addEventListener('click', fermerModalRendu);
-  }
   if (document.getElementById('liste-trouves') && document.getElementById('liste-perdus')) {
     chargerListes();
   }
