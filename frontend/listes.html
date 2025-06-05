@@ -85,5 +85,14 @@
       </form>
     </div>
   </div>
+<!-- Pop-up d'Alerte de Correspondance -->
+<div id="modal-correspondance" style="display:none; position:fixed; z-index:2000; left:0; top:0; width:100vw; height:100vh; background:rgba(30,41,59,0.8); align-items:center; justify-content:center; padding:15px;">
+  <div style="background:#fff; padding:25px 20px; border-radius:14px; max-width:500px; width:100%; box-shadow:0 8px 40px #0006; text-align:left; max-height:80vh; overflow-y:auto; position:relative;">
+    <button id="modal-correspondance-close" aria-label="Fermer la fenêtre" style="position:absolute;right:15px;top:12px;font-size:1.5em;background:none;border:none;cursor:pointer;color:#e11d48;">✖</button>
+    <h3 style="margin-top:0;color:#3b82f6;">Correspondance possible</h3>
+    <div id="liste-correspondances" style="max-height: 50vh; overflow-y: auto; border-top: 1px solid #eee; border-bottom: 1px solid #eee; padding-top:10px;"></div>
+    <button id="modal-correspondance-ok" style="background:#059669; color:#fff; border:none; border-radius:7px; padding:12px 20px; font-weight:600; cursor:pointer; margin-top:20px; width:100%;">Compris</button>
+  </div>
+</div>
 </body>
 
