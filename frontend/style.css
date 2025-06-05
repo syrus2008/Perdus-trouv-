@@ -193,18 +193,36 @@ form label {
   color: #3b82f6;
   letter-spacing: 0.2px;
 }
-input, textarea {
-  display: block;
-  width: 100%;
-  margin: 8px 0 16px 0;
-  padding: 13px;
+input, textarea, select {
+  font-size: 1em;
+  padding: 8px;
   border: 1.5px solid #d1d5db;
   border-radius: 7px;
-  font-size: 1em;
-  background: #f9fafb;
-  transition: border 0.2s, box-shadow 0.2s;
-  box-shadow: 0 1.5px 0 #ffe06611;
+  margin-bottom: 12px;
+  width: 100%;
+  box-sizing: border-box;
 }
+
+#modal-rendu form {
+  width: 100%;
+}
+
+#modal-rendu input, #modal-rendu button, #modal-rendu label {
+  max-width: 100%;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+@media (max-width: 500px) {
+  #modal-rendu > div {
+    padding: 10px 2vw 10px 2vw !important;
+    max-width: 99vw;
+  }
+  #modal-rendu form {
+    padding: 0;
+  }
+}
+
 input:focus, textarea:focus {
   border: 2px solid #3b82f6;
   outline: none;

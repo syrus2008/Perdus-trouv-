@@ -455,7 +455,7 @@ if (tabTrouves && tabPerdus) {
 
 window.onload = () => {
   // Gestion du bouton de fermeture de la modale rendu
-  const modalRenduCloseBtn = document.getElementById('modal-rendu-close');
+  const modalRenduCloseBtn = document.getElementById('modal-close-rendu');
   if (modalRenduCloseBtn) {
     modalRenduCloseBtn.addEventListener('click', fermerModalRendu);
   }
