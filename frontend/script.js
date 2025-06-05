@@ -176,51 +176,18 @@ async function chargerListes() {
           score = Math.round(100 * communs.length / Math.max(mots1.length, mots2.length));
         }
         if (score > 60) {
-          // On prépare un match pour pop-up
           matchesAuto.push({
-            id: objPerdu.id,
-            description: objPerdu.description,
-            type: 'perdu',
-            date_rapport: objPerdu.date_rapport,
-            nom: objPerdu.nom,
-            prenom: objPerdu.prenom,
-            infos: objPerdu.infos,
-            id_trouve: objTrouve.id,
-            id_perdu: objPerdu.id
+            descriptionTrouve: objTrouve.description,
+            descriptionPerdu: objPerdu.description
           });
         }
       }
     }
-    // DEBUG : Affichage des correspondances détectées
     if (matchesAuto.length > 0) {
-      console.log('[DEBUG] Correspondances détectées (matchesAuto):', matchesAuto);
-      // On regroupe par objet trouvé pour file unique
-      const fileMatches = [];
-      for (const m of matchesAuto) {
-        fileMatches.push({
-          id: m.id,
-          description: m.description,
-          type: m.type,
-          date_rapport: m.date_rapport,
-          nom: m.nom,
-          prenom: m.prenom,
-          infos: m.infos,
-          id_trouve: m.id_trouve,
-          id_perdu: m.id_perdu
-        });
-      }
-      // Robustesse : vérification DOM et id
-      if (!fileMatches[0] || !fileMatches[0].id_trouve) {
-        console.warn('[DEBUG] Aucun id_trouve valide pour afficherCorrespondancesNonIgnorees', fileMatches);
-      } else if (!document.getElementById('modal-correspondance') || !document.getElementById('liste-correspondances')) {
-        console.warn('[DEBUG] DOM modal-correspondance ou liste-correspondances manquant');
-      } else {
-        afficherCorrespondancesNonIgnorees(fileMatches, fileMatches[0].id_trouve, 'trouve');
-      }
-    } else {
-      if ((objetsTrouvesCache && objetsTrouvesCache.length > 0) && (objetsPerdusCache && objetsPerdusCache.length > 0)) {
-        console.log('[DEBUG] Aucune correspondance détectée malgré objets présents. Vérifiez la similarité des descriptions.');
-      }
+      let msg = `Attention : ${matchesAuto.length} objet(s) semblent similaires !\n`;
+      msg += matchesAuto.slice(0, 5).map(m => `Trouvé : "${m.descriptionTrouve}"\nPerdu : "${m.descriptionPerdu}"`).join('\n---\n');
+      if (matchesAuto.length > 5) msg += `\n...et ${matchesAuto.length - 5} autres.`;
+      alert(msg);
     }
 
     // Appliquer le filtre de recherche
