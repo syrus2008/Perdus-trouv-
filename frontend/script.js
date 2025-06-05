@@ -179,11 +179,17 @@ async function chargerListes() {
       });
       // Gestion du bouton "Objet rendu" (ouvre la modal)
       lt.querySelectorAll('.btn-rendu').forEach(btn => {
-        btn.addEventListener('click', e => {
-          const id = btn.getAttribute('data-id');
-          ouvrirModalRendu(id);
-        });
-      });
+  btn.addEventListener('click', e => {
+    const id = btn.getAttribute('data-id');
+    // Vérifie dans le cache si l'objet est déjà rendu
+    const obj = objetsTrouvesCache.find(o => o.id == id);
+    if (obj && obj.rendu) {
+      alert('Cet objet a déjà été rendu.');
+      return;
+    }
+    ouvrirModalRendu(id);
+  });
+});
 
 
 
