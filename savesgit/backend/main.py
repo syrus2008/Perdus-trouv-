@@ -7,25 +7,11 @@ from pydantic import BaseModel, validator
 from typing import Optional
 import uuid, os, json, shutil
 from datetime import datetime
-import cloudinary
-import cloudinary.uploader
-import aiohttp
 from dotenv import load_dotenv
 from backend.matching import find_matches_for_trouve, find_matches_for_perdu
-from backend.db import AsyncSessionLocal, ObjetTrouve, ObjetPerdu
-import asyncio
-import logging
-
-# Configuration du logging structuré
-logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 
 # Charger les variables d'environnement depuis un fichier .env si présent
 load_dotenv()
-
-# Configurer Cloudinary
-cloudinary.config(
-    cloudinary_url=os.getenv("CLOUDINARY_URL")
-)
 
 app = FastAPI()
 
@@ -46,9 +32,6 @@ ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png", "gif"}
 
 os.makedirs(UPLOADS_DIR, exist_ok=True)
 os.makedirs(FRONTEND_DIR, exist_ok=True)
-
-# Code de suppression externalisé
-SUPPRESSION_CODE = os.getenv("SUPPRESSION_CODE", "7120")
 
 
 def load_json(filename):
@@ -85,33 +68,23 @@ async def ajouter_objet_trouve(
     contents = await photo.read()
     if len(contents) > MAX_UPLOAD_SIZE:
         raise HTTPException(status_code=400, detail="Fichier trop volumineux (max 2 Mo).")
-    # Upload Cloudinary
-    try:
-        result = cloudinary.uploader.upload(contents, folder="objets-trouves", resource_type="image")
-        url_cloudinary = result.get("secure_url")
-        logging.info(f"Upload Cloudinary réussi pour {photo.filename} : {url_cloudinary}")
-    except Exception as e:
-        logging.error(f"Erreur upload Cloudinary : {e}")
-        raise HTTPException(status_code=500, detail="Erreur lors de l'upload de l'image sur Cloudinary.")
+    # Nommage sécurisé
+    uid = str(uuid.uuid4())
+    ext = photo.filename.rsplit('.', 1)[1].lower()
+    filepath = f"{UPLOADS_DIR}/{uid}.{ext}"
+    with open(filepath, "wb") as buffer:
+        buffer.write(contents)
+    objets = load_json("objets_trouves.json")
     objet_trouve = {
-        "id": str(uuid.uuid4()),
+        "id": uid,
+        "image": filepath,
         "description": description.strip(),
-        "date_rapport": date_rapport.strip(),
-        "infos": infos.strip(),
-        "image": url_cloudinary,
+        "date_rapport": date_rapport,
+        "infos": infos.strip() if infos else "",
         "rendu": False
     }
-    objets = load_json("objets_trouves.json")
     objets.append(objet_trouve)
     save_json("objets_trouves.json", objets)
-    logging.info(f"Objet trouvé ajouté (JSON et DB) : {objet_trouve['id']}")
-    # Sauvegarde aussi dans PostgreSQL
-    async def save_objet_trouve_db(objet_dict):
-        async with AsyncSessionLocal() as session:
-            obj = ObjetTrouve(**objet_dict)
-            session.add(obj)
-            await session.commit()
-    asyncio.create_task(save_objet_trouve_db(objet_trouve))
     # Recherche de correspondances dans objets_perdus.json
     objets_perdus = load_json("objets_perdus.json")
     matches = find_matches_for_trouve(objets_perdus, objet_trouve["description"])
@@ -132,7 +105,7 @@ async def ajouter_objet_trouve(
     response["message"] = "Objet trouvé ajouté"
     return response
 
-class ObjetPerduForm(BaseModel):
+class ObjetPerdu(BaseModel):
     description: str
     date_rapport: str
     infos: Optional[str] = ""
@@ -168,21 +141,14 @@ class ObjetPerduForm(BaseModel):
         return v.strip()
 
 @app.post("/api/objets_perdus")
-async def ajouter_objet_perdu(objet: ObjetPerduForm):
+async def ajouter_objet_perdu(objet: ObjetPerdu):
     objets = load_json("objets_perdus.json")
     data = objet.dict()
     data["id"] = str(uuid.uuid4())
     objets.append(data)
     save_json("objets_perdus.json", objets)
-    # Sauvegarde aussi dans PostgreSQL
-    async with AsyncSessionLocal() as session:
-        obj = ObjetPerdu(**data)
-        session.add(obj)
-        await session.commit()
-    # Recherche de correspondances dans la base (objets trouvés)
-    async with AsyncSessionLocal() as session:
-        result = await session.execute(ObjetTrouve.__table__.select())
-        objets_trouves = [dict(row._mapping) for row in result]
+    # Recherche de correspondances dans objets_trouves.json
+    objets_trouves = load_json("objets_trouves.json")
     matches = find_matches_for_perdu(objets_trouves, data["description"])
     matches_out = [
         {
@@ -199,13 +165,8 @@ async def ajouter_objet_perdu(objet: ObjetPerduForm):
     return response
 
 @app.get("/api/objets_trouves")
-async def get_objets_trouves():
-    async with AsyncSessionLocal() as session:
-        result = await session.execute(
-            ObjetTrouve.__table__.select()
-        )
-        objets = [dict(row._mapping) for row in result]
-    return objets
+def get_objets_trouves():
+    return load_json("objets_trouves.json")
 
 from fastapi import Body
 
@@ -217,53 +178,30 @@ class SuppressionCode(BaseModel):
     code: str
 
 @app.delete("/api/objets_trouves/{objet_id}")
-async def supprimer_objet_trouve(objet_id: str, code: Optional[str] = Query(None), body: Optional[SuppressionCode] = Body(None)):
+def supprimer_objet_trouve(objet_id: str, code: Optional[str] = Query(None), body: Optional[SuppressionCode] = Body(None)):
     code_final = code
     if body and hasattr(body, 'code'):
         code_final = body.code
     print('Body reçu:', body, 'Code reçu:', code_final)
     if code_final != "7120":
         raise HTTPException(status_code=403, detail="Code de suppression incorrect.")
-    # Suppression dans la base PostgreSQL d'abord
-    deleted_in_db = False
-    async with AsyncSessionLocal() as session:
-        result = await session.execute(
-            ObjetTrouve.__table__.select().where(ObjetTrouve.__table__.c.id == objet_id)
-        )
-        row = result.first()
-        if row:
-            await session.execute(
-                ObjetTrouve.__table__.delete().where(ObjetTrouve.__table__.c.id == objet_id)
-            )
-            await session.commit()
-            deleted_in_db = True
-    # Suppression dans le JSON si présent
     objets = load_json("objets_trouves.json")
     nouveaux = [obj for obj in objets if obj.get("id") != objet_id]
-    if len(objets) != len(nouveaux):
-        save_json("objets_trouves.json", nouveaux)
-    # Retourne succès si supprimé en base OU dans le JSON
+    if len(objets) == len(nouveaux):
+        raise HTTPException(status_code=404, detail="Objet non trouvé.")
+    save_json("objets_trouves.json", nouveaux)
+    return {"message": "Objet supprimé", "id": objet_id}
 
 @app.delete("/api/objets_perdus/{objet_id}")
-async def supprimer_objet_perdu(objet_id: str, code: str = Body(...)):
-    if code != SUPPRESSION_CODE:
-        logging.warning(f"Tentative de suppression avec code invalide pour {objet_id}")
-        raise HTTPException(status_code=403, detail="Code de suppression invalide.")
+def supprimer_objet_perdu(objet_id: str, code: str = Body(...)):
+    if code != "7120":
+        raise HTTPException(status_code=403, detail="Code de suppression incorrect.")
     objets = load_json("objets_perdus.json")
-    objets_new = [o for o in objets if o.get("id") != objet_id]
-    if len(objets_new) == len(objets):
-        logging.warning(f"Suppression échouée : objet {objet_id} non trouvé.")
-        raise HTTPException(status_code=404, detail="Objet perdu non trouvé.")
-    save_json("objets_perdus.json", objets_new)
-    logging.info(f"Objet perdu supprimé (JSON) : {objet_id}")
-    # Suppression dans la base
-    async with AsyncSessionLocal() as session:
-        obj = await session.get(ObjetPerdu, objet_id)
-        if obj:
-            await session.delete(obj)
-            await session.commit()
-            logging.info(f"Objet perdu supprimé (DB) : {objet_id}")
-    return {"message": "Objet perdu supprimé."}
+    nouveaux = [obj for obj in objets if obj.get("id") != objet_id]
+    if len(objets) == len(nouveaux):
+        raise HTTPException(status_code=404, detail="Objet non trouvé.")
+    save_json("objets_perdus.json", nouveaux)
+    return {"message": "Objet supprimé", "id": objet_id}
 
 @app.post("/api/objets_trouves/rendu")
 async def rendre_objet_trouve(
@@ -276,6 +214,7 @@ async def rendre_objet_trouve(
 ):
     objets = load_json("objets_trouves.json")
     trouve = False
+    chemin_photo = None
     for obj in objets:
         if obj.get("id") == objet_id:
             obj["rendu"] = True
@@ -283,49 +222,28 @@ async def rendre_objet_trouve(
             obj["prenom_beneficiaire"] = prenom.strip()
             obj["telephone_beneficiaire"] = telephone.strip()
             obj["email_beneficiaire"] = email.strip()
-            if photo:
+            if photo is not None:
                 if not allowed_file(photo.filename):
                     raise HTTPException(status_code=400, detail="Format de fichier non autorisé.")
                 contents = await photo.read()
                 if len(contents) > MAX_UPLOAD_SIZE:
                     raise HTTPException(status_code=400, detail="Fichier trop volumineux (max 2 Mo).")
-                # Upload Cloudinary
-                result = cloudinary.uploader.upload(contents, folder="objets-trouves/rendus", resource_type="image")
-                url_cloudinary = result.get("secure_url")
-                obj["photo_rendu"] = url_cloudinary
+                ext = photo.filename.rsplit('.', 1)[1].lower()
+                uid_photo = str(uuid.uuid4())
+                chemin_photo = f"{UPLOADS_DIR}/rendu_{uid_photo}.{ext}"
+                with open(chemin_photo, "wb") as buffer:
+                    buffer.write(contents)
+                obj["photo_rendu"] = chemin_photo
             trouve = True
             break
     if not trouve:
         raise HTTPException(status_code=404, detail="Objet non trouvé")
     save_json("objets_trouves.json", objets)
-
-    # Mise à jour dans la base PostgreSQL
-    async with AsyncSessionLocal() as session:
-        result = await session.execute(
-            ObjetTrouve.__table__.select().where(ObjetTrouve.__table__.c.id == objet_id)
-        )
-        row = result.first()
-        if not row:
-            raise HTTPException(status_code=404, detail="Objet non trouvé en base")
-        update_data = {
-            "rendu": True,
-            "nom_beneficiaire": nom.strip(),
-            "prenom_beneficiaire": prenom.strip(),
-            "telephone_beneficiaire": telephone.strip(),
-            "email_beneficiaire": email.strip(),
-        }
-        if chemin_photo:
-            update_data["photo_rendu"] = chemin_photo
-        await session.execute(
-            ObjetTrouve.__table__.update().where(ObjetTrouve.__table__.c.id == objet_id).values(**update_data)
-        )
-        await session.commit()
-
     return {"message": "Objet marqué comme rendu", "id": objet_id}
 
 # Route legacy pour compatibilité (clic direct, sans modal)
 @app.post("/api/objets_trouves/{objet_id}/rendu")
-async def marquer_objet_rendu(objet_id: str):
+def marquer_objet_rendu(objet_id: str):
     objets = load_json("objets_trouves.json")
     trouve = False
     for obj in objets:
@@ -336,43 +254,21 @@ async def marquer_objet_rendu(objet_id: str):
     if not trouve:
         raise HTTPException(status_code=404, detail="Objet non trouvé")
     save_json("objets_trouves.json", objets)
-    # Mise à jour dans la base PostgreSQL
-    async with AsyncSessionLocal() as session:
-        result = await session.execute(
-            ObjetTrouve.__table__.select().where(ObjetTrouve.__table__.c.id == objet_id)
-        )
-        row = result.first()
-        if not row:
-            raise HTTPException(status_code=404, detail="Objet non trouvé en base")
-        await session.execute(
-            ObjetTrouve.__table__.update().where(ObjetTrouve.__table__.c.id == objet_id).values(rendu=True)
-        )
-        await session.commit()
     return {"message": "Statut mis à jour", "id": objet_id}
 
 
 @app.get("/api/objets_perdus")
-async def get_objets_perdus():
-    async with AsyncSessionLocal() as session:
-        result = await session.execute(
-            ObjetPerdu.__table__.select()
-        )
-        objets = [dict(row._mapping) for row in result]
-    return objets
+def get_objets_perdus():
+    return load_json("objets_perdus.json")
 
 from fastapi.responses import StreamingResponse
 import csv
 from io import StringIO
 
-import base64
-
 @app.get("/api/export")
-async def exporter_objets():
-    async with AsyncSessionLocal() as session:
-        result_trouves = await session.execute(ObjetTrouve.__table__.select())
-        objets_trouves = [dict(row._mapping) for row in result_trouves]
-        result_perdus = await session.execute(ObjetPerdu.__table__.select())
-        objets_perdus = [dict(row._mapping) for row in result_perdus]
+def exporter_objets():
+    objets_trouves = load_json("objets_trouves.json")
+    objets_perdus = load_json("objets_perdus.json")
     from fastapi.responses import HTMLResponse
     from markupsafe import escape
     html = [
@@ -387,51 +283,16 @@ async def exporter_objets():
     html.append('<table><caption>Objets trouvés</caption><tr>'
         '<th>ID</th><th>Description</th><th>Date</th><th>Infos</th><th>Image</th><th>Statut</th><th>Bénéficiaire</th><th>Photo rendu</th></tr>')
     for obj in objets_trouves:
-        image_path = obj.get('image')
-        img_tag = ''
-        if image_path and os.path.exists(image_path):
-            with open(image_path, "rb") as img_file:
-                img_data = img_file.read()
-            b64 = base64.b64encode(img_data).decode()
-            ext = image_path.rsplit('.', 1)[-1].lower()
-            img_tag = f'<img src="data:image/{ext};base64,{b64}" alt="image" />'
-        elif image_path:
-            # Si c'est une URL Cloudinary, essayer de la télécharger et encoder
-            if image_path.startswith("http"):
-                try:
-                    async with aiohttp.ClientSession() as session_img:
-                        async with session_img.get(image_path) as resp:
-                            if resp.status == 200:
-                                img_data = await resp.read()
-                                # Déduire l'extension depuis l'URL ou le header
-                                ext = image_path.split('.')[-1].split('?')[0].lower()
-                                if ext not in ["jpg", "jpeg", "png", "gif"]:
-                                    ext = resp.headers.get("Content-Type", "image/jpeg").split("/")[-1]
-                                b64 = base64.b64encode(img_data).decode()
-                                img_tag = f'<img src="data:image/{ext};base64,{b64}" alt="image" />'
-                            else:
-                                img_tag = f'<span>Image non dispo</span>'
-                except Exception:
-                    img_tag = f'<span>Image non dispo</span>'
-            else:
-                img_tag = f'<span>Image non dispo</span>'
-        else:
-            img_tag = ''
+        img_html = ''
+        if obj.get('image'):
+            img_html = f'<img src="/{escape(obj["image"])}" alt="photo objet" />'
         statut = 'Rendu' if obj.get('rendu') else 'Non rendu'
         benef = ''
         photo_rendu = ''
         if obj.get('rendu'):
             benef = f"{escape(obj.get('nom_beneficiaire',''))} {escape(obj.get('prenom_beneficiaire',''))}<br>Tél: {escape(obj.get('telephone_beneficiaire',''))}<br>Email: {escape(obj.get('email_beneficiaire',''))}"
             if obj.get('photo_rendu'):
-                photo_path = obj['photo_rendu']
-                try:
-                    ext = photo_path.rsplit('.', 1)[-1].lower()
-                    mime = 'image/jpeg' if ext in ['jpg', 'jpeg'] else ('image/png' if ext == 'png' else ('image/gif' if ext == 'gif' else 'application/octet-stream'))
-                    with open(photo_path, 'rb') as imgf:
-                        img_b64 = base64.b64encode(imgf.read()).decode('utf-8')
-                    photo_rendu = f'<img src="data:{mime};base64,{img_b64}" alt="photo rendu" />'
-                except Exception as e:
-                    photo_rendu = f'<span style="color:red">(photo non disponible)</span>'
+                photo_rendu = f'<img src="/{escape(obj["photo_rendu"])}" alt="photo rendu" />'
         html.append(f'<tr><td>{escape(obj.get("id",""))}</td><td>{escape(obj.get("description",""))}</td><td>{escape(obj.get("date_rapport",""))}</td><td>{escape(obj.get("infos",""))}</td><td>{img_html}</td><td>{statut}</td><td>{benef}</td><td>{photo_rendu}</td></tr>')
     html.append('</table><hr>')
     # Objets perdus
@@ -443,7 +304,6 @@ async def exporter_objets():
     html.append('</body></html>')
     content = '\n'.join(html)
     filename = f"export_objets_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
-    logging.info("Export HTML généré et envoyé à l'utilisateur.")
     return HTMLResponse(content=content, headers={
         "Content-Disposition": f"attachment; filename={filename}"
     })

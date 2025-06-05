@@ -1,3 +1,4 @@
+# NOTE : Pour la gestion évolutive du schéma de base, il est recommandé d'utiliser Alembic pour les migrations.
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy import Column, String, Boolean
@@ -22,7 +23,7 @@ class ObjetTrouve(Base):
     nom_beneficiaire = Column(String, nullable=True)
     prenom_beneficiaire = Column(String, nullable=True)
     telephone_beneficiaire = Column(String, nullable=True)
-    email_beneficiaire = Column(String, nullable=True)
+    email_beneficiaire = Column(String, nullable=True, unique=True)
     photo_rendu = Column(String, nullable=True)
 
 class ObjetPerdu(Base):
@@ -34,4 +35,4 @@ class ObjetPerdu(Base):
     nom = Column(String)
     prenom = Column(String)
     telephone = Column(String)
-    email = Column(String)
+    email = Column(String, unique=True)

@@ -1,26 +1,3 @@
-// --- Fonctions utilitaires globales ---
-function escapeHTML(str) {
-  return String(str).replace(/[&<>"]/g, function (m) {
-    return ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[m]);
-  });
-}
-
-function validateEmail(email) {
-  return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email);
-}
-
-function fetchJson(url, options = {}) {
-  return fetch(url, options)
-    .then(async res => {
-      if (!res.ok) {
-        let msg = 'Erreur réseau';
-        try { msg = (await res.json()).detail || msg; } catch {}
-        throw new Error(msg);
-      }
-      return res.json();
-    });
-}
-
 let objetsTrouvesCache = [];
 let objetsPerdusCache = [];
 let rechercheActuelle = '';
@@ -337,38 +314,28 @@ if (formTrouve) {
     feedbackTrouve.textContent = '';
     const formData = new FormData(e.target);
     const desc = formData.get('description')?.trim();
-    const date = formData.get('date_rapport')?.trim();
-    const photo = formData.get('photo');
-    // Validations côté JS
     if (!desc || desc.length < 3) {
-      showFeedback(feedbackTrouve, 'Description trop courte (min 3 caractères)');
+      showFeedback(feedbackTrouve, 'Description trop courte.');
       return;
     }
-    if (!date) {
-      showFeedback(feedbackTrouve, 'Date obligatoire');
+    const file = formData.get('photo');
+    if (!file || !file.name.match(/\.(jpg|jpeg|png|gif)$/i)) {
+      showFeedback(feedbackTrouve, 'Format de photo non autorisé.');
       return;
     }
-    if (!photo || !photo.name) {
-      showFeedback(feedbackTrouve, 'Photo obligatoire');
-      return;
-    }
-    if (photo.size > 2 * 1024 * 1024) {
-      showFeedback(feedbackTrouve, 'Photo trop volumineuse (max 2 Mo)');
-      return;
-    }
-    if (!['image/jpeg','image/png','image/gif'].includes(photo.type)) {
-      showFeedback(feedbackTrouve, 'Format photo non autorisé');
+    if (file.size > 20 * 1024 * 1024) {
+      showFeedback(feedbackTrouve, 'Photo trop volumineuse (max 20 Mo, HD autorisé).');
       return;
     }
     try {
-      const responseData = await fetchJson('/api/objets_trouves', {
-        method: 'POST',
-        body: formData
-      });
+      const resp = await fetch('/api/objets_trouves', { method: 'POST', body: formData });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.detail || 'Erreur inconnue');
       showFeedback(feedbackTrouve, 'Objet trouvé déclaré avec succès !', true);
       e.target.reset();
-      previewPhoto.src = '';
       previewPhoto.style.display = 'none';
+      const responseData = data; // resp.json() est déjà assigné à data ici
+      // Vérifier les correspondances potentielles
       if (responseData.matches && responseData.matches.length > 0) {
         afficherModalCorrespondance(responseData.matches);
       }
@@ -454,11 +421,6 @@ if (tabTrouves && tabPerdus) {
 }
 
 window.onload = () => {
-  // Gestion du bouton de fermeture de la modale rendu
-  const modalRenduCloseBtn = document.getElementById('modal-rendu-close');
-  if (modalRenduCloseBtn) {
-    modalRenduCloseBtn.addEventListener('click', fermerModalRendu);
-  }
   if (document.getElementById('liste-trouves') && document.getElementById('liste-perdus')) {
     chargerListes();
   }
