@@ -163,18 +163,6 @@ async function chargerListes() {
     // --- Détection automatique de correspondances à l'ouverture ---
     // On cherche tous les couples trouvés/perdus très similaires (score > 60)
     const matchesAuto = [];
-    if (!objetsTrouvesCache || !objetsPerdusCache) {
-      console.warn('[DEBUG] objetsTrouvesCache ou objetsPerdusCache non définis');
-    }
-    for (const objTrouve of objetsTrouvesCache) {
-      for (const objPerdu of objetsPerdusCache) {
-        if (objTrouve.rendu) continue; // On ne propose pas pour les objets déjà rendus
-        // Score de similarité simple (description)
-        const desc1 = (objTrouve.description || '').toLowerCase();
-        const desc2 = (objPerdu.description || '').toLowerCase();
-        let score = 0;
-        if (desc1 && desc2) {
-          // Score naïf : % de mots communs ou égalité stricte
           if (desc1 === desc2) score = 100;
           else {
             const mots1 = desc1.split(/\W+/);
