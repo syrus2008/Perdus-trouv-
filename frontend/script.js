@@ -158,6 +158,7 @@ async function chargerListes() {
         });
       });
 
+
 // --- Modal rendu objet ---
 let modalRendu = null;
 let currentRenduId = null;
@@ -183,6 +184,7 @@ function fermerModalRendu() {
     arreterWebcam();
   }
 }
+
 document.addEventListener('DOMContentLoaded', () => {
   // Fermer modal sur clic croix ou fond
   document.getElementById('modal-close-rendu').onclick = fermerModalRendu;
