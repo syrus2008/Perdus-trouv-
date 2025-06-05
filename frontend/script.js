@@ -89,7 +89,14 @@ async function afficherModalCorrespondanceUnique(match, onNon, onOui) {
 
 // Affiche les correspondances non ignorées, une par une
 async function afficherCorrespondancesNonIgnorees(matches, idSource, typeSource) {
-  const ignorees = await fetch('/api/comparaisons/ignorees').then(r=>r.json()).catch(()=>[]);
+  let ignorees = [];
+  try {
+    const resp = await fetch('/api/comparaisons/ignorees');
+    ignorees = await resp.json();
+    if (!Array.isArray(ignorees)) ignorees = [];
+  } catch (e) {
+    ignorees = [];
+  }
   // matches = [{id, ...}]
   let idx = 0;
   const next = () => {
