@@ -156,6 +156,9 @@ async function chargerListes() {
     // --- Détection automatique de correspondances à l'ouverture ---
     // On cherche tous les couples trouvés/perdus très similaires (score > 60)
     const matchesAuto = [];
+    if (!objetsTrouvesCache || !objetsPerdusCache) {
+      console.warn('[DEBUG] objetsTrouvesCache ou objetsPerdusCache non définis');
+    }
     for (const objTrouve of objetsTrouvesCache) {
       for (const objPerdu of objetsPerdusCache) {
         if (objTrouve.rendu) continue; // On ne propose pas pour les objets déjà rendus
@@ -189,8 +192,9 @@ async function chargerListes() {
         }
       }
     }
-    // On affiche les correspondances non ignorées (pop-up Oui/Non)
+    // DEBUG : Affichage des correspondances détectées
     if (matchesAuto.length > 0) {
+      console.log('[DEBUG] Correspondances détectées (matchesAuto):', matchesAuto);
       // On regroupe par objet trouvé pour file unique
       const fileMatches = [];
       for (const m of matchesAuto) {
@@ -206,8 +210,18 @@ async function chargerListes() {
           id_perdu: m.id_perdu
         });
       }
-      // Affiche chaque match non ignoré (un par un)
-      afficherCorrespondancesNonIgnorees(fileMatches, fileMatches[0].id_trouve, 'trouve');
+      // Robustesse : vérification DOM et id
+      if (!fileMatches[0] || !fileMatches[0].id_trouve) {
+        console.warn('[DEBUG] Aucun id_trouve valide pour afficherCorrespondancesNonIgnorees', fileMatches);
+      } else if (!document.getElementById('modal-correspondance') || !document.getElementById('liste-correspondances')) {
+        console.warn('[DEBUG] DOM modal-correspondance ou liste-correspondances manquant');
+      } else {
+        afficherCorrespondancesNonIgnorees(fileMatches, fileMatches[0].id_trouve, 'trouve');
+      }
+    } else {
+      if ((objetsTrouvesCache && objetsTrouvesCache.length > 0) && (objetsPerdusCache && objetsPerdusCache.length > 0)) {
+        console.log('[DEBUG] Aucune correspondance détectée malgré objets présents. Vérifiez la similarité des descriptions.');
+      }
     }
 
     // Appliquer le filtre de recherche
