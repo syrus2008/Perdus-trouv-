@@ -1,4 +1,31 @@
 // --- Fonctions utilitaires globales ---
+
+// --- Modal rendu objet (déclaration globale, unique, AVANT toute utilisation) ---
+let modalRendu = null;
+let currentRenduId = null;
+let renduStream = null;
+
+function ouvrirModalRendu(objetId) {
+  currentRenduId = objetId;
+  if (!modalRendu) modalRendu = document.getElementById('modal-rendu');
+  if (modalRendu) {
+    modalRendu.style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+    // Reset form
+    const form = document.getElementById('form-rendu');
+    if (form) form.reset();
+    document.getElementById('rendu-photo-preview').src = '';
+    document.getElementById('rendu-photo-preview').style.display = 'none';
+  }
+}
+function fermerModalRendu() {
+  if (modalRendu) {
+    modalRendu.style.display = 'none';
+    document.body.style.overflow = '';
+    arreterWebcam();
+  }
+}
+
 function escapeHTML(str) {
   return String(str).replace(/[&<>"]/g, function (m) {
     return ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[m]);
@@ -177,13 +204,7 @@ function ouvrirModalRendu(objetId) {
     document.getElementById('rendu-photo-preview').style.display = 'none';
   }
 }
-function fermerModalRendu() {
-  if (modalRendu) {
-    modalRendu.style.display = 'none';
-    document.body.style.overflow = '';
-    arreterWebcam();
-  }
-}
+
 
 document.addEventListener('DOMContentLoaded', () => {
   // Fermer modal sur clic croix ou fond
