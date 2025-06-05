@@ -16,6 +16,8 @@ from backend.db import AsyncSessionLocal, ObjetTrouve, ObjetPerdu
 import asyncio
 import logging
 
+app = FastAPI()
+
 COMPARAISONS_IGNOREES_PATH = os.path.join(os.path.dirname(__file__), "comparaisons_ignorees.json")
 
 def load_json(filename):
