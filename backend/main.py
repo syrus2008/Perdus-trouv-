@@ -432,7 +432,7 @@ async def exporter_objets():
                     photo_rendu = f'<img src="data:{mime};base64,{img_b64}" alt="photo rendu" />'
                 except Exception as e:
                     photo_rendu = f'<span style="color:red">(photo non disponible)</span>'
-        html.append(f'<tr><td>{escape(obj.get("id",""))}</td><td>{escape(obj.get("description",""))}</td><td>{escape(obj.get("date_rapport",""))}</td><td>{escape(obj.get("infos",""))}</td><td>{img_html}</td><td>{statut}</td><td>{benef}</td><td>{photo_rendu}</td></tr>')
+        html.append(f'<tr><td>{escape(obj.get("id",""))}</td><td>{escape(obj.get("description",""))}</td><td>{escape(obj.get("date_rapport",""))}</td><td>{escape(obj.get("infos",""))}</td><td>{img_tag}</td><td>{statut}</td><td>{benef}</td><td>{photo_rendu}</td></tr>')
     html.append('</table><hr>')
     # Objets perdus
     html.append('<table><caption>Objets perdus</caption><tr>'
