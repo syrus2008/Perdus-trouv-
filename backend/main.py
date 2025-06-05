@@ -25,13 +25,15 @@ async def startup_event():
 # COMPARAISONS_IGNOREES_PATH = os.path.join(os.path.dirname(__file__), "comparaisons_ignorees.json")
 # (plus utilisé, remplacé par la base PostgreSQL)
 
-# (Migration) Cette fonction n'est plus utilisée pour objets trouvés/perdus : tout est désormais en base PostgreSQL.
 def load_json(filename):
-    return []  # Obsolète, conservée pour compatibilité éventuelle
+    if os.path.exists(filename):
+        with open(filename, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return []
 
-# (Migration) Cette fonction n'est plus utilisée pour objets trouvés/perdus : tout est désormais en base PostgreSQL.
 def save_json(filename, data):
-    pass  # Obsolète, conservée pour compatibilité éventuelle
+    with open(filename, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
 
 @app.get("/api/comparaisons/ignorees")
 async def get_comparaisons_ignorees():
@@ -44,14 +46,8 @@ from uuid import uuid4
 
 @app.get("/api/matchs_auto")
 async def matchs_auto():
-    """
-    Calcule et retourne les correspondances automatiques entre objets trouvés et perdus depuis la base PostgreSQL uniquement.
-    """
-    async with AsyncSessionLocal() as session:
-        result_trouves = await session.execute(ObjetTrouve.__table__.select())
-        objets_trouves = [dict(row._mapping) for row in result_trouves]
-        result_perdus = await session.execute(ObjetPerdu.__table__.select())
-        objets_perdus = [dict(row._mapping) for row in result_perdus]
+    objets_trouves = load_json("objets_trouves.json")
+    objets_perdus = load_json("objets_perdus.json")
     matches = []
     for obj_t in objets_trouves:
         if obj_t.get("rendu"):
@@ -127,13 +123,15 @@ os.makedirs(FRONTEND_DIR, exist_ok=True)
 SUPPRESSION_CODE = os.getenv("SUPPRESSION_CODE", "7120")
 
 
-# (Migration) Cette fonction n'est plus utilisée pour objets trouvés/perdus : tout est désormais en base PostgreSQL.
 def load_json(filename):
-    return []  # Obsolète, conservée pour compatibilité éventuelle
+    if os.path.exists(filename):
+        with open(filename, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return []
 
-# (Migration) Cette fonction n'est plus utilisée pour objets trouvés/perdus : tout est désormais en base PostgreSQL.
 def save_json(filename, data):
-    pass  # Obsolète, conservée pour compatibilité éventuelle
+    with open(filename, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -175,16 +173,21 @@ async def ajouter_objet_trouve(
         "image": url_cloudinary,
         "rendu": False
     }
-    # Enregistrement direct en base PostgreSQL
-    async with AsyncSessionLocal() as session:
-        obj = ObjetTrouve(**objet_trouve)
-        session.add(obj)
-        await session.commit()
-    # Recherche de correspondances dans la base (objets perdus)
-    async with AsyncSessionLocal() as session:
-        result = await session.execute(ObjetPerdu.__table__.select())
-        objets_perdus = [dict(row._mapping) for row in result]
+    objets = load_json("objets_trouves.json")
+    objets.append(objet_trouve)
+    save_json("objets_trouves.json", objets)
+    logging.info(f"Objet trouvé ajouté (JSON et DB) : {objet_trouve['id']}")
+    # Sauvegarde aussi dans PostgreSQL
+    async def save_objet_trouve_db(objet_dict):
+        async with AsyncSessionLocal() as session:
+            obj = ObjetTrouve(**objet_dict)
+            session.add(obj)
+            await session.commit()
+    asyncio.create_task(save_objet_trouve_db(objet_trouve))
+    # Recherche de correspondances dans objets_perdus.json
+    objets_perdus = load_json("objets_perdus.json")
     matches = find_matches_for_trouve(objets_perdus, objet_trouve["description"])
+    # Construction du champ matches pour le frontend
     matches_out = [
         {
             "id": obj.get("id"),
@@ -199,7 +202,7 @@ async def ajouter_objet_trouve(
     response = objet_trouve.copy()
     response["matches"] = matches_out
     response["message"] = "Objet trouvé ajouté"
-    return response  # plus d'écriture JSON
+    return response
 
 class ObjetPerduForm(BaseModel):
     description: str
@@ -238,9 +241,12 @@ class ObjetPerduForm(BaseModel):
 
 @app.post("/api/objets_perdus")
 async def ajouter_objet_perdu(objet: ObjetPerduForm):
+    objets = load_json("objets_perdus.json")
     data = objet.dict()
     data["id"] = str(uuid.uuid4())
-    # Enregistrement direct en base PostgreSQL
+    objets.append(data)
+    save_json("objets_perdus.json", objets)
+    # Sauvegarde aussi dans PostgreSQL
     async with AsyncSessionLocal() as session:
         obj = ObjetPerdu(**data)
         session.add(obj)
@@ -262,36 +268,36 @@ async def ajouter_objet_perdu(objet: ObjetPerduForm):
     response = data.copy()
     response["matches"] = matches_out
     response["message"] = "Objet perdu ajouté"
-    return response  # plus d'écriture JSON
+    return response
 
 @app.get("/api/objets_trouves")
 async def get_objets_trouves():
-    """
-    Retourne la liste des objets trouvés depuis la base PostgreSQL uniquement.
-    """
     async with AsyncSessionLocal() as session:
-        result = await session.execute(ObjetTrouve.__table__.select())
+        result = await session.execute(
+            ObjetTrouve.__table__.select()
+        )
         objets = [dict(row._mapping) for row in result]
     return objets
 
-@app.get("/api/objets_perdus")
-async def get_objets_perdus():
-    """
-    Retourne la liste des objets perdus depuis la base PostgreSQL uniquement.
-    """
-    async with AsyncSessionLocal() as session:
-        result = await session.execute(ObjetPerdu.__table__.select())
-        objets = [dict(row._mapping) for row in result]
-    return objets
+from fastapi import Body
+
+from typing import Optional
+from fastapi import Query
+from pydantic import BaseModel
+
+class SuppressionCode(BaseModel):
+    code: str
 
 @app.delete("/api/objets_trouves/{objet_id}")
 async def supprimer_objet_trouve(objet_id: str, code: Optional[str] = Query(None), body: Optional[SuppressionCode] = Body(None)):
     code_final = code
     if body and hasattr(body, 'code'):
         code_final = body.code
+    print('Body reçu:', body, 'Code reçu:', code_final)
     if code_final != "7120":
         raise HTTPException(status_code=403, detail="Code de suppression incorrect.")
-    # Suppression dans la base PostgreSQL uniquement
+    # Suppression dans la base PostgreSQL d'abord
+    deleted_in_db = False
     async with AsyncSessionLocal() as session:
         result = await session.execute(
             ObjetTrouve.__table__.select().where(ObjetTrouve.__table__.c.id == objet_id)
@@ -302,23 +308,34 @@ async def supprimer_objet_trouve(objet_id: str, code: Optional[str] = Query(None
                 ObjetTrouve.__table__.delete().where(ObjetTrouve.__table__.c.id == objet_id)
             )
             await session.commit()
-            return {"message": "Objet trouvé supprimé."}
-    raise HTTPException(status_code=404, detail="Objet trouvé non trouvé.")
+            deleted_in_db = True
+    # Suppression dans le JSON si présent
+    objets = load_json("objets_trouves.json")
+    nouveaux = [obj for obj in objets if obj.get("id") != objet_id]
+    if len(objets) != len(nouveaux):
+        save_json("objets_trouves.json", nouveaux)
+    # Retourne succès si supprimé en base OU dans le JSON
 
 @app.delete("/api/objets_perdus/{objet_id}")
 async def supprimer_objet_perdu(objet_id: str, code: str = Body(...)):
     if code != SUPPRESSION_CODE:
         logging.warning(f"Tentative de suppression avec code invalide pour {objet_id}")
         raise HTTPException(status_code=403, detail="Code de suppression invalide.")
-    # Suppression dans la base PostgreSQL uniquement
+    objets = load_json("objets_perdus.json")
+    objets_new = [o for o in objets if o.get("id") != objet_id]
+    if len(objets_new) == len(objets):
+        logging.warning(f"Suppression échouée : objet {objet_id} non trouvé.")
+        raise HTTPException(status_code=404, detail="Objet perdu non trouvé.")
+    save_json("objets_perdus.json", objets_new)
+    logging.info(f"Objet perdu supprimé (JSON) : {objet_id}")
+    # Suppression dans la base
     async with AsyncSessionLocal() as session:
         obj = await session.get(ObjetPerdu, objet_id)
         if obj:
             await session.delete(obj)
             await session.commit()
             logging.info(f"Objet perdu supprimé (DB) : {objet_id}")
-            return {"message": "Objet perdu supprimé."}
-    raise HTTPException(status_code=404, detail="Objet perdu non trouvé.")
+    return {"message": "Objet perdu supprimé."}
 
 @app.post("/api/objets_trouves/rendu")
 async def rendre_objet_trouve(
@@ -329,21 +346,32 @@ async def rendre_objet_trouve(
     email: str = Form(...),
     photo: UploadFile = File(None)
 ):
-    # Mise à jour direct en base PostgreSQL
-    update_data = {
-        "rendu": True,
-        "nom_beneficiaire": nom.strip(),
-        "prenom_beneficiaire": prenom.strip(),
-        "telephone_beneficiaire": telephone.strip(),
-        "email_beneficiaire": email.strip(),
-    }
-    chemin_photo = None
-    if photo:
-        ext = os.path.splitext(photo.filename)[-1].lower()
-        chemin_photo = os.path.join(UPLOADS_DIR, f"rendu_{objet_id}{ext}")
-        with open(chemin_photo, "wb") as f:
-            shutil.copyfileobj(photo.file, f)
-        update_data["photo_rendu"] = chemin_photo
+    objets = load_json("objets_trouves.json")
+    trouve = False
+    for obj in objets:
+        if obj.get("id") == objet_id:
+            obj["rendu"] = True
+            obj["nom_beneficiaire"] = nom.strip()
+            obj["prenom_beneficiaire"] = prenom.strip()
+            obj["telephone_beneficiaire"] = telephone.strip()
+            obj["email_beneficiaire"] = email.strip()
+            if photo:
+                if not allowed_file(photo.filename):
+                    raise HTTPException(status_code=400, detail="Format de fichier non autorisé.")
+                contents = await photo.read()
+                if len(contents) > MAX_UPLOAD_SIZE:
+                    raise HTTPException(status_code=400, detail="Fichier trop volumineux (max 2 Mo).")
+                # Upload Cloudinary
+                result = cloudinary.uploader.upload(contents, folder="objets-trouves/rendus", resource_type="image")
+                url_cloudinary = result.get("secure_url")
+                obj["photo_rendu"] = url_cloudinary
+            trouve = True
+            break
+    if not trouve:
+        raise HTTPException(status_code=404, detail="Objet non trouvé")
+    save_json("objets_trouves.json", objets)
+
+    # Mise à jour dans la base PostgreSQL
     async with AsyncSessionLocal() as session:
         result = await session.execute(
             ObjetTrouve.__table__.select().where(ObjetTrouve.__table__.c.id == objet_id)
@@ -351,6 +379,15 @@ async def rendre_objet_trouve(
         row = result.first()
         if not row:
             raise HTTPException(status_code=404, detail="Objet non trouvé en base")
+        update_data = {
+            "rendu": True,
+            "nom_beneficiaire": nom.strip(),
+            "prenom_beneficiaire": prenom.strip(),
+            "telephone_beneficiaire": telephone.strip(),
+            "email_beneficiaire": email.strip(),
+        }
+        if chemin_photo:
+            update_data["photo_rendu"] = chemin_photo
         await session.execute(
             ObjetTrouve.__table__.update().where(ObjetTrouve.__table__.c.id == objet_id).values(**update_data)
         )
@@ -388,11 +425,10 @@ async def marquer_objet_rendu(objet_id: str):
 
 @app.get("/api/objets_perdus")
 async def get_objets_perdus():
-    """
-    Retourne la liste des objets perdus depuis la base PostgreSQL uniquement.
-    """
     async with AsyncSessionLocal() as session:
-        result = await session.execute(ObjetPerdu.__table__.select())
+        result = await session.execute(
+            ObjetPerdu.__table__.select()
+        )
         objets = [dict(row._mapping) for row in result]
     return objets
 
@@ -487,5 +523,5 @@ async def exporter_objets():
 # Servir les images uploadées
 app.mount("/uploads", StaticFiles(directory=UPLOADS_DIR), name="uploads")
 
-# Servir le frontend APRÈS toutes les routes API
+# Servir frontend APRÈS les routes API
 app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="static")
