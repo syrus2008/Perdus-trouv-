@@ -186,24 +186,6 @@ async function chargerListes() {
       });
 
 
-// --- Modal rendu objet ---
-let modalRendu = null;
-let currentRenduId = null;
-let renduStream = null;
-
-function ouvrirModalRendu(objetId) {
-  currentRenduId = objetId;
-  if (!modalRendu) modalRendu = document.getElementById('modal-rendu');
-  if (modalRendu) {
-    modalRendu.style.display = 'flex';
-    document.body.style.overflow = 'hidden';
-    // Reset form
-    const form = document.getElementById('form-rendu');
-    if (form) form.reset();
-    document.getElementById('rendu-photo-preview').src = '';
-    document.getElementById('rendu-photo-preview').style.display = 'none';
-  }
-}
 
 
 document.addEventListener('DOMContentLoaded', () => {
