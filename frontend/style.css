@@ -293,7 +293,7 @@ button:hover, .btn-listes:hover, .btn-retour:hover {
 }
 .cartes {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  grid-template-columns: 1fr;
   gap: 18px;
   margin-top: 18px;
 }

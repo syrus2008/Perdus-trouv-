@@ -1,5 +1,5 @@
 
-from fastapi import FastAPI, UploadFile, File, Form, Request, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, Request, HTTPException, Body
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -15,6 +15,36 @@ from backend.matching import find_matches_for_trouve, find_matches_for_perdu
 from backend.db import AsyncSessionLocal, ObjetTrouve, ObjetPerdu
 import asyncio
 import logging
+
+COMPARAISONS_IGNOREES_PATH = os.path.join(os.path.dirname(__file__), "comparaisons_ignorees.json")
+
+def load_json(filename):
+    if os.path.exists(filename):
+        with open(filename, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return []
+
+def save_json(filename, data):
+    with open(filename, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+@app.get("/api/comparaisons/ignorees")
+async def get_comparaisons_ignorees():
+    return load_json(COMPARAISONS_IGNOREES_PATH)
+
+@app.post("/api/comparaisons/ignorer")
+async def post_comparaison_ignorer(data: dict = Body(...)):
+    """Body: {"id_trouve":..., "id_perdu":...}"""
+    if "id_trouve" not in data or "id_perdu" not in data:
+        raise HTTPException(status_code=400, detail="id_trouve et id_perdu requis")
+    couples = load_json(COMPARAISONS_IGNOREES_PATH)
+    # Ne pas ajouter de doublon
+    for c in couples:
+        if c["id_trouve"] == data["id_trouve"] and c["id_perdu"] == data["id_perdu"]:
+            return {"message": "Déjà ignoré"}
+    couples.append({"id_trouve": data["id_trouve"], "id_perdu": data["id_perdu"]})
+    save_json(COMPARAISONS_IGNOREES_PATH, couples)
+    return {"message": "Ajouté"}
 
 # Configuration du logging structuré
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')

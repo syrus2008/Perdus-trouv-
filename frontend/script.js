@@ -59,31 +59,62 @@ const modalCorrespondanceCloseBtn = document.getElementById('modal-correspondanc
 const modalCorrespondanceOkBtn = document.getElementById('modal-correspondance-ok');
 
 // Fonction pour afficher le pop-up de correspondance
-function afficherModalCorrespondance(matches) {
-  if (!modalCorrespondance || !listeCorrespondancesEl || !matches || matches.length === 0) {
-    return;
-  }
-
-  listeCorrespondancesEl.innerHTML = ''; // Vider les anciennes correspondances
-
-  matches.forEach(match => {
-    const itemDiv = document.createElement('div');
-    itemDiv.className = 'correspondance-item';
-    // Adapter les champs en fonction de la structure de vos objets 'match'
-    // Ceci est un exemple, vous devrez l'ajuster à ce que votre API renvoie
-    itemDiv.innerHTML = `
-      <strong>Objet: ${escapeHTML(match.description)}</strong>
-      <p>Type: ${match.type === 'trouve' ? 'Trouvé' : 'Perdu'}</p>
-      ${match.date_rapport ? `<p class="date">Date: ${formatDate(match.date_rapport)}</p>` : ''}
-      ${match.nom ? `<p>Déclaré par: ${escapeHTML(match.nom)} ${escapeHTML(match.prenom || '')}</p>` : ''}
-      ${match.infos ? `<p>Infos: ${escapeHTML(match.infos)}</p>` : ''}
-      <a href="listes.html#objet-${match.id}" target="_blank" style="font-weight:bold; color:#059669;">Voir détails</a>
-    `;
-    listeCorrespondancesEl.appendChild(itemDiv);
-  });
-
+// Pop-up pour une seule correspondance avec confirmation Oui/Non
+async function afficherModalCorrespondanceUnique(match, onNon, onOui) {
+  if (!modalCorrespondance || !listeCorrespondancesEl || !match) return;
+  listeCorrespondancesEl.innerHTML = '';
+  const itemDiv = document.createElement('div');
+  itemDiv.className = 'correspondance-item';
+  itemDiv.innerHTML = `
+    <strong>Objet: ${escapeHTML(match.description)}</strong>
+    <p>Type: ${match.type === 'trouve' ? 'Trouvé' : 'Perdu'}</p>
+    ${match.date_rapport ? `<p class="date">Date: ${formatDate(match.date_rapport)}</p>` : ''}
+    ${match.nom ? `<p>Déclaré par: ${escapeHTML(match.nom)} ${escapeHTML(match.prenom || '')}</p>` : ''}
+    ${match.infos ? `<p>Infos: ${escapeHTML(match.infos)}</p>` : ''}
+    <a href="listes.html#objet-${match.id}" target="_blank" style="font-weight:bold; color:#059669;">Voir détails</a>
+  `;
+  listeCorrespondancesEl.appendChild(itemDiv);
+  // Ajout boutons Oui/Non
+  const btns = document.createElement('div');
+  btns.style.marginTop = '18px';
+  btns.innerHTML = `
+    <button id="btn-correspondance-oui" style="margin-right:16px;background:#059669;color:#fff;">Oui, c'est le même</button>
+    <button id="btn-correspondance-non" style="background:#e11d48;color:#fff;">Non, ce n'est pas le même</button>
+  `;
+  listeCorrespondancesEl.appendChild(btns);
   modalCorrespondance.style.display = 'flex';
+  document.getElementById('btn-correspondance-oui').onclick = () => { modalCorrespondance.style.display = 'none'; if (onOui) onOui(); };
+  document.getElementById('btn-correspondance-non').onclick = () => { modalCorrespondance.style.display = 'none'; if (onNon) onNon(); };
 }
+
+// Affiche les correspondances non ignorées, une par une
+async function afficherCorrespondancesNonIgnorees(matches, idSource, typeSource) {
+  const ignorees = await fetch('/api/comparaisons/ignorees').then(r=>r.json()).catch(()=>[]);
+  // matches = [{id, ...}]
+  let idx = 0;
+  const next = () => {
+    while (idx < matches.length) {
+      const match = matches[idx++];
+      let id_trouve, id_perdu;
+      if (typeSource === 'trouve') { id_trouve = idSource; id_perdu = match.id; }
+      else { id_trouve = match.id; id_perdu = idSource; }
+      if (!ignorees.some(c=>c.id_trouve===id_trouve && c.id_perdu===id_perdu)) {
+        afficherModalCorrespondanceUnique(match, async () => {
+          // Non : ignorer ce couple côté serveur
+          await fetch('/api/comparaisons/ignorer', {
+            method: 'POST', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({id_trouve, id_perdu})
+          });
+          next();
+        }, () => { /* Oui : juste fermer */ next(); });
+        return;
+      }
+    }
+    // Fini
+  };
+  next();
+}
+
 
 // Cacher le pop-up de correspondance
 function cacherModalCorrespondance() {
@@ -121,6 +152,64 @@ async function chargerListes() {
     objetsPerdusCache = perdus;
     lt.innerHTML = '';
     lp.innerHTML = '';
+
+    // --- Détection automatique de correspondances à l'ouverture ---
+    // On cherche tous les couples trouvés/perdus très similaires (score > 60)
+    const matchesAuto = [];
+    for (const objTrouve of objetsTrouvesCache) {
+      for (const objPerdu of objetsPerdusCache) {
+        if (objTrouve.rendu) continue; // On ne propose pas pour les objets déjà rendus
+        // Score de similarité simple (description)
+        const desc1 = (objTrouve.description || '').toLowerCase();
+        const desc2 = (objPerdu.description || '').toLowerCase();
+        let score = 0;
+        if (desc1 && desc2) {
+          // Score naïf : % de mots communs ou égalité stricte
+          if (desc1 === desc2) score = 100;
+          else {
+            const mots1 = desc1.split(/\W+/);
+            const mots2 = desc2.split(/\W+/);
+            const communs = mots1.filter(m => m.length > 2 && mots2.includes(m));
+            score = Math.round(100 * communs.length / Math.max(mots1.length, mots2.length));
+          }
+        }
+        if (score > 60) {
+          // On prépare un match pour pop-up
+          matchesAuto.push({
+            id: objPerdu.id,
+            description: objPerdu.description,
+            type: 'perdu',
+            date_rapport: objPerdu.date_rapport,
+            nom: objPerdu.nom,
+            prenom: objPerdu.prenom,
+            infos: objPerdu.infos,
+            id_trouve: objTrouve.id,
+            id_perdu: objPerdu.id
+          });
+        }
+      }
+    }
+    // On affiche les correspondances non ignorées (pop-up Oui/Non)
+    if (matchesAuto.length > 0) {
+      // On regroupe par objet trouvé pour file unique
+      const fileMatches = [];
+      for (const m of matchesAuto) {
+        fileMatches.push({
+          id: m.id,
+          description: m.description,
+          type: m.type,
+          date_rapport: m.date_rapport,
+          nom: m.nom,
+          prenom: m.prenom,
+          infos: m.infos,
+          id_trouve: m.id_trouve,
+          id_perdu: m.id_perdu
+        });
+      }
+      // Affiche chaque match non ignoré (un par un)
+      afficherCorrespondancesNonIgnorees(fileMatches, fileMatches[0].id_trouve, 'trouve');
+    }
+
     // Appliquer le filtre de recherche
     const filtre = (obj, type) => {
       const q = rechercheActuelle.trim().toLowerCase();
