@@ -12,13 +12,23 @@ import cloudinary.uploader
 import aiohttp
 from dotenv import load_dotenv
 from backend.matching import find_matches_for_trouve, find_matches_for_perdu
-from backend.db import AsyncSessionLocal, ObjetTrouve, ObjetPerdu
+from backend.db import AsyncSessionLocal, ObjetTrouve, ObjetPerdu, ComparaisonIgnoree
 import asyncio
 import logging
 
 app = FastAPI()
-
-COMPARAISONS_IGNOREES_PATH = os.path.join(os.path.dirname(__file__), "comparaisons_ignorees.json")
+# Création automatique des tables à chaque démarrage (utile pour Railway)
+from backend.db import engine, Base
+import asyncio
+async def create_tables():
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+try:
+    asyncio.run(create_tables())
+except Exception as e:
+    print(f"[WARNING] Erreur création automatique des tables : {e}")
+# COMPARAISONS_IGNOREES_PATH = os.path.join(os.path.dirname(__file__), "comparaisons_ignorees.json")
+# (plus utilisé, remplacé par la base PostgreSQL)
 
 def load_json(filename):
     if os.path.exists(filename):
@@ -32,20 +42,34 @@ def save_json(filename, data):
 
 @app.get("/api/comparaisons/ignorees")
 async def get_comparaisons_ignorees():
-    return load_json(COMPARAISONS_IGNOREES_PATH)
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(ComparaisonIgnoree.__table__.select())
+        couples = [dict(row._mapping) for row in result]
+    return couples
+
+from uuid import uuid4
 
 @app.post("/api/comparaisons/ignorer")
 async def post_comparaison_ignorer(data: dict = Body(...)):
     """Body: {"id_trouve":..., "id_perdu":...}"""
     if "id_trouve" not in data or "id_perdu" not in data:
         raise HTTPException(status_code=400, detail="id_trouve et id_perdu requis")
-    couples = load_json(COMPARAISONS_IGNOREES_PATH)
-    # Ne pas ajouter de doublon
-    for c in couples:
-        if c["id_trouve"] == data["id_trouve"] and c["id_perdu"] == data["id_perdu"]:
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            ComparaisonIgnoree.__table__.select().where(
+                (ComparaisonIgnoree.id_trouve == data["id_trouve"]) &
+                (ComparaisonIgnoree.id_perdu == data["id_perdu"])
+            )
+        )
+        if result.first():
             return {"message": "Déjà ignoré"}
-    couples.append({"id_trouve": data["id_trouve"], "id_perdu": data["id_perdu"]})
-    save_json(COMPARAISONS_IGNOREES_PATH, couples)
+        new_ignore = ComparaisonIgnoree(
+            id=str(uuid4()),
+            id_trouve=data["id_trouve"],
+            id_perdu=data["id_perdu"]
+        )
+        session.add(new_ignore)
+        await session.commit()
     return {"message": "Ajouté"}
 
 # Configuration du logging structuré

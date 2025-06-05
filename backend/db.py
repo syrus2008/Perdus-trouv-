@@ -1,8 +1,10 @@
 # NOTE : Pour la gestion évolutive du schéma de base, il est recommandé d'utiliser Alembic pour les migrations.
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, declarative_base
-from sqlalchemy import Column, String, Boolean
+from sqlalchemy import Column, String, Boolean, UniqueConstraint
 import os
+from dotenv import load_dotenv
+load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 if DATABASE_URL and not DATABASE_URL.startswith("postgresql+asyncpg"):
@@ -36,3 +38,11 @@ class ObjetPerdu(Base):
     prenom = Column(String)
     telephone = Column(String)
     email = Column(String, unique=True)
+
+class ComparaisonIgnoree(Base):
+    __tablename__ = "comparaisons_ignorees"
+    id = Column(String, primary_key=True, index=True)
+    id_trouve = Column(String, nullable=False)
+    id_perdu = Column(String, nullable=False)
+    __table_args__ = (UniqueConstraint("id_trouve", "id_perdu", name="_trouve_perdu_uc"),)
+
