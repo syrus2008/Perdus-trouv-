@@ -163,13 +163,17 @@ async function chargerListes() {
     // --- Détection automatique de correspondances à l'ouverture ---
     // On cherche tous les couples trouvés/perdus très similaires (score > 60)
     const matchesAuto = [];
-          if (desc1 === desc2) score = 100;
-          else {
-            const mots1 = desc1.split(/\W+/);
-            const mots2 = desc2.split(/\W+/);
-            const communs = mots1.filter(m => m.length > 2 && mots2.includes(m));
-            score = Math.round(100 * communs.length / Math.max(mots1.length, mots2.length));
-          }
+    for (const objTrouve of objetsTrouvesCache) {
+      for (const objPerdu of objetsPerdusCache) {
+        const desc1 = (objTrouve.description || '').toLowerCase();
+        const desc2 = (objPerdu.description || '').toLowerCase();
+        let score = 0;
+        if (desc1 === desc2) score = 100;
+        else {
+          const mots1 = desc1.split(/\W+/);
+          const mots2 = desc2.split(/\W+/);
+          const communs = mots1.filter(m => m.length > 2 && mots2.includes(m));
+          score = Math.round(100 * communs.length / Math.max(mots1.length, mots2.length));
         }
         if (score > 60) {
           // On prépare un match pour pop-up
