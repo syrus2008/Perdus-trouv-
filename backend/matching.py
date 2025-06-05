@@ -6,6 +6,7 @@ import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 
 # Seuil configurable via variable d'environnement
+# Le seuil de similarité peut être configuré via la variable MATCH_THRESHOLD dans Railway.
 DEFAULT_MATCH_THRESHOLD = int(os.getenv("MATCH_THRESHOLD", 60))
 
 def find_matches_for_trouve(objets_perdus, description, threshold=DEFAULT_MATCH_THRESHOLD):

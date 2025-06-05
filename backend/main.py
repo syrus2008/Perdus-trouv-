@@ -17,16 +17,11 @@ import asyncio
 import logging
 
 app = FastAPI()
-# Création automatique des tables à chaque démarrage (utile pour Railway)
-from backend.db import engine, Base
-import asyncio
-async def create_tables():
+@app.on_event("startup")
+async def startup_event():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-try:
-    asyncio.run(create_tables())
-except Exception as e:
-    print(f"[WARNING] Erreur création automatique des tables : {e}")
+
 # COMPARAISONS_IGNOREES_PATH = os.path.join(os.path.dirname(__file__), "comparaisons_ignorees.json")
 # (plus utilisé, remplacé par la base PostgreSQL)
 
@@ -48,6 +43,27 @@ async def get_comparaisons_ignorees():
     return couples
 
 from uuid import uuid4
+
+@app.get("/api/matchs_auto")
+async def matchs_auto():
+    objets_trouves = load_json("objets_trouves.json")
+    objets_perdus = load_json("objets_perdus.json")
+    matches = []
+    for obj_t in objets_trouves:
+        if obj_t.get("rendu"):
+            continue
+        for obj_p in find_matches_for_trouve(objets_perdus, obj_t["description"]):
+            matches.append({
+                "id_trouve": obj_t["id"],
+                "id_perdu": obj_p["id"],
+                "description": obj_p["description"],
+                "type": "perdu",
+                "date_rapport": obj_p.get("date_rapport"),
+                "nom": obj_p.get("nom"),
+                "prenom": obj_p.get("prenom"),
+                "infos": obj_p.get("infos")
+            })
+    return matches
 
 @app.post("/api/comparaisons/ignorer")
 async def post_comparaison_ignorer(data: dict = Body(...)):

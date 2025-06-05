@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL")
+# Railway attend une URL DATABASE_URL en postgresql+asyncpg://
 if DATABASE_URL and not DATABASE_URL.startswith("postgresql+asyncpg"):
     DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
 
