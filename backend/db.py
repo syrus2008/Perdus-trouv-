@@ -1,7 +1,9 @@
 # NOTE : Pour la gestion évolutive du schéma de base, il est recommandé d'utiliser Alembic pour les migrations.
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, declarative_base
-from sqlalchemy import Column, String, Boolean, UniqueConstraint
+from sqlalchemy import Column, String, Boolean, UniqueConstraint, DateTime
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import func
 import os
 from dotenv import load_dotenv
 load_dotenv()
@@ -14,6 +16,24 @@ if DATABASE_URL and not DATABASE_URL.startswith("postgresql+asyncpg"):
 engine = create_async_engine(DATABASE_URL, echo=True, future=True)
 AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 Base = declarative_base()
+
+class User(Base):
+    __tablename__ = "users"
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    username = Column(String, unique=True, index=True, nullable=False)
+    first_name = Column(String, nullable=False)
+    last_name = Column(String, nullable=False)
+    hashed_password = Column(String, nullable=False)
+    role = Column(String, default="user")  # 'user' or 'admin'
+
+class ActionLog(Base):
+    __tablename__ = "action_logs"
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    user_id = Column(UUID(as_uuid=True), nullable=False)
+    action = Column(String, nullable=False)
+    object_type = Column(String, nullable=False)
+    object_id = Column(String, nullable=False)
+    timestamp = Column(DateTime(timezone=True), server_default=func.now())
 
 class ObjetTrouve(Base):
     __tablename__ = "objets_trouves"

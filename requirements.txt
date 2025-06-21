@@ -8,3 +8,5 @@ sqlalchemy
 asyncpg
 cloudinary
 aiohttp
+passlib[bcrypt]
+python-jose[cryptography]

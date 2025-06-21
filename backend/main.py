@@ -12,7 +12,13 @@ import cloudinary.uploader
 import aiohttp
 from dotenv import load_dotenv
 from backend.matching import find_matches_for_trouve, find_matches_for_perdu
-from backend.db import AsyncSessionLocal, ObjetTrouve, ObjetPerdu, ComparaisonIgnoree
+from backend.db import AsyncSessionLocal, ObjetTrouve, ObjetPerdu, ComparaisonIgnoree, User
+from backend.schemas import UserCreate, UserInDB, UserPublic, Token
+from backend.auth import get_password_hash, verify_password, create_access_token
+from backend.dependencies import get_current_active_user, get_current_admin_user
+from backend.db import ActionLog
+from sqlalchemy.future import select
+from sqlalchemy.exc import IntegrityError
 import asyncio
 import logging
 
@@ -36,7 +42,7 @@ def save_json(filename, data):
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 @app.get("/api/comparaisons/ignorees")
-async def get_comparaisons_ignorees():
+async def get_comparaisons_ignorees(current_user=Depends(get_current_active_user)):
     async with AsyncSessionLocal() as session:
         result = await session.execute(ComparaisonIgnoree.__table__.select())
         couples = [dict(row._mapping) for row in result]
@@ -66,7 +72,7 @@ async def matchs_auto():
     return matches
 
 @app.post("/api/comparaisons/ignorer")
-async def post_comparaison_ignorer(data: dict = Body(...)):
+async def post_comparaison_ignorer(data: dict = Body(...), current_user=Depends(get_current_active_user)):
     """Body: {"id_trouve":..., "id_perdu":...}"""
     if "id_trouve" not in data or "id_perdu" not in data:
         raise HTTPException(status_code=400, detail="id_trouve et id_perdu requis")
@@ -93,13 +99,10 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(mess
 
 # Charger les variables d'environnement depuis un fichier .env si présent
 load_dotenv()
-
 # Configurer Cloudinary
 cloudinary.config(
     cloudinary_url=os.getenv("CLOUDINARY_URL")
 )
-
-app = FastAPI()
 
 # Middleware CORS
 app.add_middleware(
@@ -240,16 +243,26 @@ class ObjetPerduForm(BaseModel):
         return v.strip()
 
 @app.post("/api/objets_perdus")
-async def ajouter_objet_perdu(objet: ObjetPerduForm):
+async def ajouter_objet_perdu(objet: ObjetPerduForm, current_user=Depends(get_current_active_user)):
     objets = load_json("objets_perdus.json")
     data = objet.dict()
     data["id"] = str(uuid.uuid4())
     objets.append(data)
     save_json("objets_perdus.json", objets)
+    logging.info(f"Objet perdu ajouté par {current_user.username}")
     # Sauvegarde aussi dans PostgreSQL
     async with AsyncSessionLocal() as session:
         obj = ObjetPerdu(**data)
         session.add(obj)
+        await session.commit()
+        # Log action
+        action_log = ActionLog(
+            user_id=current_user.id,
+            action="create",
+            object_type="objet_perdu",
+            object_id=obj.id
+        )
+        session.add(action_log)
         await session.commit()
     # Recherche de correspondances dans la base (objets trouvés)
     async with AsyncSessionLocal() as session:
@@ -271,7 +284,7 @@ async def ajouter_objet_perdu(objet: ObjetPerduForm):
     return response
 
 @app.get("/api/objets_trouves")
-async def get_objets_trouves():
+async def get_objets_trouves(current_user=Depends(get_current_active_user)):
     async with AsyncSessionLocal() as session:
         result = await session.execute(
             ObjetTrouve.__table__.select()
@@ -289,7 +302,7 @@ class SuppressionCode(BaseModel):
     code: str
 
 @app.delete("/api/objets_trouves/{objet_id}")
-async def supprimer_objet_trouve(objet_id: str, code: Optional[str] = Query(None), body: Optional[SuppressionCode] = Body(None)):
+async def supprimer_objet_trouve(objet_id: str, code: Optional[str] = Query(None), body: Optional[SuppressionCode] = Body(None), current_user=Depends(get_current_active_user)):
     code_final = code
     if body and hasattr(body, 'code'):
         code_final = body.code
@@ -314,10 +327,20 @@ async def supprimer_objet_trouve(objet_id: str, code: Optional[str] = Query(None
     nouveaux = [obj for obj in objets if obj.get("id") != objet_id]
     if len(objets) != len(nouveaux):
         save_json("objets_trouves.json", nouveaux)
+    # Log action
+    async with AsyncSessionLocal() as session:
+        action_log = ActionLog(
+            user_id=current_user.id,
+            action="delete",
+            object_type="objet_trouve",
+            object_id=objet_id
+        )
+        session.add(action_log)
+        await session.commit()
     # Retourne succès si supprimé en base OU dans le JSON
 
 @app.delete("/api/objets_perdus/{objet_id}")
-async def supprimer_objet_perdu(objet_id: str, code: str = Body(...)):
+async def supprimer_objet_perdu(objet_id: str, code: str = Body(...), current_user=Depends(get_current_active_user)):
     if code != SUPPRESSION_CODE:
         logging.warning(f"Tentative de suppression avec code invalide pour {objet_id}")
         raise HTTPException(status_code=403, detail="Code de suppression invalide.")
@@ -335,6 +358,15 @@ async def supprimer_objet_perdu(objet_id: str, code: str = Body(...)):
             await session.delete(obj)
             await session.commit()
             logging.info(f"Objet perdu supprimé (DB) : {objet_id}")
+        # Log action
+        action_log = ActionLog(
+            user_id=current_user.id,
+            action="delete",
+            object_type="objet_perdu",
+            object_id=objet_id
+        )
+        session.add(action_log)
+        await session.commit()
     return {"message": "Objet perdu supprimé."}
 
 @app.post("/api/objets_trouves/rendu")
@@ -344,7 +376,8 @@ async def rendre_objet_trouve(
     prenom: str = Form(...),
     telephone: str = Form(...),
     email: str = Form(...),
-    photo: UploadFile = File(None)
+    photo: UploadFile = File(None),
+    current_user=Depends(get_current_active_user)
 ):
     objets = load_json("objets_trouves.json")
     trouve = False
@@ -386,18 +419,27 @@ async def rendre_objet_trouve(
             "telephone_beneficiaire": telephone.strip(),
             "email_beneficiaire": email.strip(),
         }
-        if chemin_photo:
-            update_data["photo_rendu"] = chemin_photo
+        if photo:
+            update_data["photo_rendu"] = url_cloudinary
         await session.execute(
             ObjetTrouve.__table__.update().where(ObjetTrouve.__table__.c.id == objet_id).values(**update_data)
         )
+        await session.commit()
+        # Log action
+        action_log = ActionLog(
+            user_id=current_user.id,
+            action="rendu",
+            object_type="objet_trouve",
+            object_id=objet_id
+        )
+        session.add(action_log)
         await session.commit()
 
     return {"message": "Objet marqué comme rendu", "id": objet_id}
 
 # Route legacy pour compatibilité (clic direct, sans modal)
 @app.post("/api/objets_trouves/{objet_id}/rendu")
-async def marquer_objet_rendu(objet_id: str):
+async def marquer_objet_rendu(objet_id: str, current_user=Depends(get_current_active_user)):
     objets = load_json("objets_trouves.json")
     trouve = False
     for obj in objets:
@@ -420,11 +462,20 @@ async def marquer_objet_rendu(objet_id: str):
             ObjetTrouve.__table__.update().where(ObjetTrouve.__table__.c.id == objet_id).values(rendu=True)
         )
         await session.commit()
+        # Log action
+        action_log = ActionLog(
+            user_id=current_user.id,
+            action="rendu",
+            object_type="objet_trouve",
+            object_id=objet_id
+        )
+        session.add(action_log)
+        await session.commit()
     return {"message": "Statut mis à jour", "id": objet_id}
 
 
 @app.get("/api/objets_perdus")
-async def get_objets_perdus():
+async def get_objets_perdus(current_user=Depends(get_current_active_user)):
     async with AsyncSessionLocal() as session:
         result = await session.execute(
             ObjetPerdu.__table__.select()
@@ -519,6 +570,63 @@ async def exporter_objets():
     return HTMLResponse(content=content, headers={
         "Content-Disposition": f"attachment; filename={filename}"
     })
+
+# --- ADMIN ENDPOINTS ---
+
+from backend.schemas import UserPublic
+from sqlalchemy.future import select
+from sqlalchemy.exc import IntegrityError
+from fastapi import status
+
+@app.get("/api/admin/users", dependencies=[Depends(get_current_admin_user)])
+async def list_users():
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(User))
+        users = result.scalars().all()
+        return [UserPublic(
+            id=str(u.id),
+            username=u.username,
+            first_name=u.first_name,
+            last_name=u.last_name,
+            role=u.role
+        ) for u in users]
+
+@app.delete("/api/admin/users/{user_id}", dependencies=[Depends(get_current_admin_user)])
+async def delete_user(user_id: str):
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, user_id)
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        await session.delete(user)
+        await session.commit()
+        return {"message": "User deleted"}
+
+@app.post("/api/admin/users/{user_id}/role", dependencies=[Depends(get_current_admin_user)])
+async def change_user_role(user_id: str, role: str = Body(...)):
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, user_id)
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        user.role = role
+        await session.commit()
+        return {"message": "Role updated"}
+
+@app.get("/api/admin/logs", dependencies=[Depends(get_current_admin_user)])
+async def get_action_logs():
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(ActionLog))
+        logs = result.scalars().all()
+        return [
+            {
+                "id": str(log.id),
+                "user_id": str(log.user_id),
+                "action": log.action,
+                "object_type": log.object_type,
+                "object_id": log.object_id,
+                "timestamp": str(log.timestamp)
+            }
+            for log in logs
+        ]
 
 # Servir les images uploadées
 app.mount("/uploads", StaticFiles(directory=UPLOADS_DIR), name="uploads")

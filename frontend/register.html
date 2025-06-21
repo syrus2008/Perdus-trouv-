@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Inscription - Perdus/Retrouvés</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h2>Créer un compte</h2>
+        <form id="register-form">
+            <label for="first_name">Prénom</label>
+            <input type="text" id="first_name" name="first_name" required>
+            <label for="last_name">Nom</label>
+            <input type="text" id="last_name" name="last_name" required>
+            <label for="username">Nom d'utilisateur</label>
+            <input type="text" id="username" name="username" required>
+            <label for="password">Mot de passe</label>
+            <input type="password" id="password" name="password" required>
+            <button type="submit">S'inscrire</button>
+        </form>
+        <div id="register-message"></div>
+        <p>Déjà inscrit ? <a href="login.html">Connexion</a></p>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>

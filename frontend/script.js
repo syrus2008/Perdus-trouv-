@@ -533,6 +533,176 @@ if (tabTrouves && tabPerdus) {
   tabPerdus.addEventListener('click', () => switchSubTab('perdus'));
 }
 
+// --- Auth & User State ---
+function saveToken(token) {
+  localStorage.setItem('jwt_token', token);
+}
+function getToken() {
+  return localStorage.getItem('jwt_token');
+}
+function clearToken() {
+  localStorage.removeItem('jwt_token');
+}
+function parseJwt(token) {
+  if (!token) return null;
+  try {
+    const base64Url = token.split('.')[1];
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
+      return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+    }).join(''));
+    return JSON.parse(jsonPayload);
+  } catch (e) { return null; }
+}
+function getUserRole() {
+  const token = getToken();
+  const payload = parseJwt(token);
+  return payload && payload.role ? payload.role : null;
+}
+function isLoggedIn() {
+  return !!getToken();
+}
+
+// --- Registration ---
+const registerForm = document.getElementById('register-form');
+if (registerForm) {
+  registerForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const data = Object.fromEntries(new FormData(registerForm).entries());
+    document.getElementById('register-message').textContent = '';
+    try {
+      const resp = await fetch('/api/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      });
+      if (!resp.ok) throw new Error((await resp.json()).detail || 'Erreur d’inscription');
+      document.getElementById('register-message').textContent = 'Inscription réussie, vous pouvez vous connecter.';
+      registerForm.reset();
+    } catch (err) {
+      document.getElementById('register-message').textContent = err.message;
+    }
+  });
+}
+
+// --- Login ---
+const loginForm = document.getElementById('login-form');
+if (loginForm) {
+  loginForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const data = Object.fromEntries(new FormData(loginForm).entries());
+    document.getElementById('login-message').textContent = '';
+    try {
+      const resp = await fetch('/api/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `username=${encodeURIComponent(data.username)}&password=${encodeURIComponent(data.password)}`
+      });
+      if (!resp.ok) throw new Error((await resp.json()).detail || 'Erreur de connexion');
+      const result = await resp.json();
+      saveToken(result.access_token);
+      document.getElementById('login-message').textContent = 'Connexion réussie.';
+      // Redirige selon le rôle
+      setTimeout(() => {
+        const role = getUserRole();
+        if (role === 'admin') window.location.href = 'admin.html';
+        else window.location.href = 'index.html';
+      }, 500);
+    } catch (err) {
+      document.getElementById('login-message').textContent = err.message;
+    }
+  });
+}
+
+// --- Logout ---
+const logoutBtn = document.getElementById('logout-btn');
+if (logoutBtn) {
+  logoutBtn.addEventListener('click', () => {
+    clearToken();
+    window.location.href = 'login.html';
+  });
+}
+
+// --- Page Protection & Redirection ---
+function protectPage({ adminOnly = false } = {}) {
+  if (!isLoggedIn()) {
+    window.location.href = 'login.html';
+    return;
+  }
+  if (adminOnly && getUserRole() !== 'admin') {
+    window.location.href = 'index.html';
+  }
+}
+
+if (window.location.pathname.endsWith('admin.html')) {
+  protectPage({ adminOnly: true });
+  loadAdminPanel();
+} else if (window.location.pathname.endsWith('index.html') || window.location.pathname.endsWith('listes.html')) {
+  if (!isLoggedIn()) window.location.href = 'login.html';
+}
+
+// --- Admin Panel Logic ---
+function loadAdminPanel() {
+  loadUsers();
+  loadLogs();
+}
+
+async function loadUsers() {
+  const table = document.querySelector('#users-table tbody');
+  if (!table) return;
+  table.innerHTML = '';
+  try {
+    const resp = await fetch('/api/admin/users', { headers: { Authorization: 'Bearer ' + getToken() } });
+    if (!resp.ok) throw new Error('Erreur chargement utilisateurs');
+    const users = await resp.json();
+    users.forEach(u => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${escapeHTML(u.username)}</td><td>${escapeHTML(u.first_name)}</td><td>${escapeHTML(u.last_name)}</td><td>${escapeHTML(u.role)}</td><td><button data-id="${u.id}" class="delete-user">Supprimer</button> <button data-id="${u.id}" class="make-admin">Admin</button> <button data-id="${u.id}" class="make-user">User</button></td>`;
+      table.appendChild(tr);
+    });
+    // Actions
+    table.querySelectorAll('.delete-user').forEach(btn => {
+      btn.onclick = async () => {
+        if (!confirm('Supprimer cet utilisateur ?')) return;
+        await fetch(`/api/admin/users/${btn.dataset.id}`, { method: 'DELETE', headers: { Authorization: 'Bearer ' + getToken() } });
+        loadUsers();
+      };
+    });
+    table.querySelectorAll('.make-admin').forEach(btn => {
+      btn.onclick = async () => {
+        await fetch(`/api/admin/users/${btn.dataset.id}/role`, { method: 'POST', headers: { Authorization: 'Bearer ' + getToken(), 'Content-Type': 'application/json' }, body: JSON.stringify('admin') });
+        loadUsers();
+      };
+    });
+    table.querySelectorAll('.make-user').forEach(btn => {
+      btn.onclick = async () => {
+        await fetch(`/api/admin/users/${btn.dataset.id}/role`, { method: 'POST', headers: { Authorization: 'Bearer ' + getToken(), 'Content-Type': 'application/json' }, body: JSON.stringify('user') });
+        loadUsers();
+      };
+    });
+  } catch (e) {
+    document.getElementById('admin-message').textContent = e.message;
+  }
+}
+
+async function loadLogs() {
+  const table = document.querySelector('#logs-table tbody');
+  if (!table) return;
+  table.innerHTML = '';
+  try {
+    const resp = await fetch('/api/admin/logs', { headers: { Authorization: 'Bearer ' + getToken() } });
+    if (!resp.ok) throw new Error('Erreur chargement logs');
+    const logs = await resp.json();
+    logs.forEach(l => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${escapeHTML(l.user_id)}</td><td>${escapeHTML(l.action)}</td><td>${escapeHTML(l.object_type)}</td><td>${escapeHTML(l.object_id)}</td><td>${escapeHTML(l.timestamp)}</td>`;
+      table.appendChild(tr);
+    });
+  } catch (e) {
+    document.getElementById('admin-message').textContent = e.message;
+  }
+}
+
 window.onload = () => {
   // Gestion du bouton de fermeture de la modale rendu
   const modalRenduCloseBtn = document.getElementById('modal-close-rendu');

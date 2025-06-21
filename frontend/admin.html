@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Admin - Perdus/Retrouvés</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h2>Panneau d'administration</h2>
+        <div id="admin-section">
+            <h3>Utilisateurs</h3>
+            <table id="users-table">
+                <thead>
+                    <tr>
+                        <th>Nom d'utilisateur</th>
+                        <th>Prénom</th>
+                        <th>Nom</th>
+                        <th>Rôle</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+            <h3>Logs d'action</h3>
+            <table id="logs-table">
+                <thead>
+                    <tr>
+                        <th>Utilisateur</th>
+                        <th>Action</th>
+                        <th>Type d'objet</th>
+                        <th>ID Objet</th>
+                        <th>Date</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+        <button id="logout-btn">Déconnexion</button>
+        <div id="admin-message"></div>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>
