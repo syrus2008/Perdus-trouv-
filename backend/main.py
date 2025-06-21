@@ -1,5 +1,5 @@
 
-from fastapi import FastAPI, UploadFile, File, Form, Request, HTTPException, Body
+from fastapi import FastAPI, UploadFile, File, Form, Request, HTTPException, Body, Depends
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
