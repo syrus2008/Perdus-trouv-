@@ -12,7 +12,7 @@ import cloudinary.uploader
 import aiohttp
 from dotenv import load_dotenv
 from backend.matching import find_matches_for_trouve, find_matches_for_perdu
-from backend.db import AsyncSessionLocal, ObjetTrouve, ObjetPerdu, ComparaisonIgnoree, User, engine
+from backend.db import AsyncSessionLocal, ObjetTrouve, ObjetPerdu, ComparaisonIgnoree, User, engine, Base
 from backend.schemas import UserCreate, UserInDB, UserPublic, Token
 from backend.auth import get_password_hash, verify_password, create_access_token
 from backend.dependencies import get_current_active_user, get_current_admin_user
